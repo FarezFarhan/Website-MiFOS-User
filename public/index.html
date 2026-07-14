@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIFOS Sensor Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-title h1 {
+            font-size: 28px;
+            color: #0a7ea4;
+        }
+
+        .header-title p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border-radius: 8px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+
+        .status-indicator.connected {
+            background: #22c55e;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            flex-wrap: wrap;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: #f0f0f0;
+            color: #333;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .tab-button:hover {
+            background: #e0e0e0;
+        }
+
+        .tab-button.active {
+            background: #0a7ea4;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .grid-2col {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #0a7ea4;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-full {
+            grid-column: 1 / -1;
+        }
+
+        .plot-container {
+            width: 100%;
+            height: 400px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .plot-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #999;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #0a7ea4;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #0a7ea4;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #086a8a;
+        }
+
+        .btn-success {
+            background: #22c55e;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #16a34a;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #0a7ea4;
+            box-shadow: 0 0 0 3px rgba(10, 126, 164, 0.1);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .alarm-list {
+            list-style: none;
+        }
+
+        .alarm-item {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 4px solid #0a7ea4;
+        }
+
+        .alarm-item.disabled {
+            opacity: 0.6;
+            border-left-color: #ccc;
+        }
+
+        .alarm-info {
+            flex: 1;
+        }
+
+        .alarm-threshold {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .alarm-status {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .alarm-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .alarm-actions button {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #ef4444;
+        }
+
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #22c55e;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #0a7ea4 0%, #086a8a 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .acquisition-control {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .acquisition-status {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 200px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.running {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-badge.stopped {
+            background: #fee2e2;
+            color: #7f1d1d;
+        }
+
+        /* CCTV Styles */
+        .camera-container {
+            width: 100%;
+            height: 300px;
+            background: #000;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        .camera-container img,
+        .camera-container video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .camera-placeholder {
+            color: #666;
+            text-align: center;
+        }
+
+        .camera-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .camera-item {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #0a7ea4;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .camera-info {
+            flex: 1;
+        }
+
+        .camera-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .camera-url {
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            margin-top: 5px;
+        }
+
+        .camera-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .camera-actions button {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        /* Maps Styles */
+        .map-container {
+            width: 100%;
+            height: 500px;
+            background: #e0e0e0;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            border: 2px solid #0a7ea4;
+            overflow: hidden;
+        }
+
+        #gmap {
+            width: 100%;
+            height: 100%;
+        }
+
+        .map-placeholder {
+            text-align: center;
+            color: #666;
+        }
+
+        .map-placeholder h3 {
+            margin-bottom: 10px;
+            color: #0a7ea4;
+        }
+
+        /* Alert Legend Styles */
+        .alert-legend {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid #0a7ea4;
+        }
+
+        .legend-title {
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #333;
+        }
+
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            cursor: default;
+            border: 2px solid #ddd;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+        }
+
+        .legend-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .alert-event-item {
+            background: #f9f9f9;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .alert-event-info {
+            flex: 1;
+        }
+
+        .alert-event-type {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .alert-event-location {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .alert-event-time {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        @media (max-width: 768px) {
+            .grid,
+            .grid-2col {
+                grid-template-columns: 1fr;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+
+            .tabs {
+                flex-wrap: wrap;
+            }
+
+            .camera-list {
+                grid-template-columns: 1fr;
+            }
+
+            .legend-items {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>📡 MIFOS Dashboard</h1>
+                <p>Real-time Fiber Optic Sensor Monitoring</p>
+            </div>
+            <div class="connection-status">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-button" onclick="switchTab('monitoring')">Monitoring</button>
+            <button class="tab-button" onclick="switchTab('settings')">Settings</button>
+            <button class="tab-button" onclick="switchTab('alarms')">Alarms</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <div class="grid">
+                <div class="card card-full">
+                    <h2>📊 Data Acquisition</h2>
+                    <div class="acquisition-control">
+                        <div class="acquisition-status">
+                            <span id="acquisitionStatus">Status: <strong>Loading...</strong></span>
+                            <span class="status-badge" id="acquisitionBadge">Loading</span>
+                        </div>
+                        <button class="btn-success" id="toggleAcquisitionBtn" onclick="toggleAcquisition()">Start</button>
+                    </div>
+                </div>
+
+                <div class="card card-full">
+                    <h2>🌊 Waterfall Diagram</h2>
+                    <div class="plot-container" id="waterfallPlot">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <span>Start acquisition to view plots</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card card-full">
+                    <h2>📈 Latest Trace</h2>
+                    <div class="plot-container" id="singlePlot">
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <span>Start acquisition to view plots</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>⚙️ Display Settings</h2>
+                    <div class="stats" id="displayStats">
+                        <div class="stat-box">
+                            <div class="stat-value" id="roiValue">-</div>
+                            <div class="stat-label">ROI Range</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="locValue">-</div>
+                            <div class="stat-label">Location</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="magValue">-</div>
+                            <div class="stat-label">Magnitude</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="stat-value" id="meterValue">-</div>
+                            <div class="stat-label">Meter</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>🔄 Auto Refresh</h2>
+                    <div class="button-group">
+                        <button class="btn-primary" id="autoRefreshBtn" onclick="toggleAutoRefresh()">Enable</button>
+                        <button class="btn-secondary" onclick="refreshPlots()">Refresh Now</button>
+                    </div>
+                    <p id="lastUpdateTime" style="font-size: 12px; color: #666;">Last updated: Never</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monitoring Tab (CCTV + Maps + Alerts) -->
+        <div id="monitoring" class="tab-content">
+            <div class="grid-2col">
+                <!-- CCTV Section -->
+                <div class="card card-full">
+                    <h2>📹 CCTV Monitoring</h2>
+                    <div id="cctvDisplay">
+                        <div class="camera-container">
+                            <div class="camera-placeholder">
+                                <p>No camera selected</p>
+                                <p style="font-size: 12px; margin-top: 10px;">Configure cameras in Settings tab</p>
+                            </div>
+                        </div>
+                        <div class="button-group">
+                            <select id="cameraSelect" onchange="switchCamera()" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+                                <option value="">Select Camera...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google Maps Section -->
+                <div class="card card-full">
+                    <h2>🗺️ Fiber Route & Alert Map</h2>
+                    <div class="map-container" id="mapContainer">
+                        <div id="gmap"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert Legend -->
+            <div class="card card-full">
+                <h2>🎯 Alert Type Legend</h2>
+                <div class="alert-legend">
+                    <div class="legend-title">Filter by Alert Type:</div>
+                    <div class="legend-items" id="alertLegend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #0a7ea4;"></div>
+                            <div class="legend-label">All Alerts</div>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ef4444;"></div>
+                            <div class="legend-label">Critical</div>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #f59e0b;"></div>
+                            <div class="legend-label">Warning</div>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #3b82f6;"></div>
+                            <div class="legend-label">Info</div>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #22c55e;"></div>
+                            <div class="legend-label">Resolved</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Alerts -->
+            <div class="card card-full">
+                <h2>📢 Recent Alerts</h2>
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="loadAlarmEvents()">Refresh</button>
+                </div>
+                <div id="recentAlertsList" style="max-height: 400px; overflow-y: auto;">
+                    <p style="text-align: center; color: #999; padding: 20px;">No alerts detected</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings" class="tab-content">
+            <div class="grid">
+                <div class="card card-full">
+                    <h2>🌐 Server Configuration</h2>
+                    <div class="input-group">
+                        <label>Server URL</label>
+                        <input type="text" id="serverUrl" placeholder="http://192.168.1.100:5000" value="http://localhost:5000">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn-primary" onclick="testConnection()">Test Connection</button>
+                    </div>
+                    <p id="connectionMessage" style="font-size: 12px; color: #666; margin-top: 10px;"></p>
+                </div>
+
+                <div class="card card-full">
+                    <h2>📹 CCTV Camera Configuration</h2>
+                    <div class="input-group">
+                        <label>Camera Name</label>
+                        <input type="text" id="cameraName" placeholder="e.g., Camera 1">
+                    </div>
+                    <div class="input-group">
+                        <label>Camera IP Address / URL</label>
+                        <input type="url" id="cameraUrl" placeholder="e.g., http://192.168.1.50:8080/stream or rtsp://...">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn-success" onclick="addCamera()">Add Camera</button>
+                    </div>
+                    <div style="margin-top: 15px;">
+                        <h3 style="font-size: 14px; margin-bottom: 10px;">Configured Cameras:</h3>
+                        <div class="camera-list" id="camerasList">
+                            <p style="text-align: center; color: #999; padding: 20px;">No cameras configured</p>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <div class="card">
+                    <h2>📍 Region of Interest (ROI)</h2>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>Start</label>
+                            <input type="number" id="roiStart" placeholder="0" value="0">
+                        </div>
+                        <div class="input-group">
+                            <label>End</label>
+                            <input type="number" id="roiEnd" placeholder="1000" value="1000">
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="updateRoi()">Update ROI</button>
+                </div>
+
+                <div class="card">
+                    <h2>📏 Location Range</h2>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>Start (m)</label>
+                            <input type="number" id="locStart" placeholder="0" value="0">
+                        </div>
+                        <div class="input-group">
+                            <label>End (m)</label>
+                            <input type="number" id="locEnd" placeholder="1000" value="1000">
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="updateLocations()">Update Location</button>
+                </div>
+
+                <div class="card">
+                    <h2>📊 Magnitude Range</h2>
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label>Min</label>
+                            <input type="number" id="magStart" placeholder="0" value="0" step="0.001">
+                        </div>
+                        <div class="input-group">
+                            <label>Max</label>
+                            <input type="number" id="magEnd" placeholder="0.05" value="0.05" step="0.001">
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="updateMagnitude()">Update Magnitude</button>
+                </div>
+
+                <div class="card">
+                    <h2>📐 Meter Unit</h2>
+                    <p style="margin-bottom: 15px; color: #666;">Display distances in meters instead of samples</p>
+                    <button class="btn-primary" id="meterToggleBtn" onclick="toggleMeter()">Enable Meter</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alarms Tab -->
+        <div id="alarms" class="tab-content">
+            <div class="grid">
+                <div class="card card-full">
+                    <h2>🚨 Add New Alarm</h2>
+                    <div class="input-group">
+                        <label>Threshold Value</label>
+                        <input type="number" id="newThreshold" placeholder="Enter threshold" step="0.001">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn-success" onclick="addAlarm()">Add Alarm</button>
+                    </div>
+                </div>
+
+                <div class="card card-full">
+                    <h2>📋 Configured Alarms</h2>
+                    <div class="button-group">
+                        <button class="btn-secondary" onclick="loadAlarms()">Refresh</button>
+                        <button class="btn-danger" onclick="resetAlarms()">Reset All</button>
+                    </div>
+                    <ul class="alarm-list" id="alarmsList">
+                        <li style="text-align: center; color: #999; padding: 20px;">No alarms configured</li>
+                    </ul>
+                </div>
+
+                <div class="card card-full">
+                    <h2>🔔 Alarm Events</h2>
+                    <button class="btn-secondary" onclick="loadAlarmEvents()">Refresh Events</button>
+                    <div id="alarmEventsList" style="margin-top: 15px;">
+                        <p style="text-align: center; color: #999; padding: 20px;">No events detected</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCimeuGYBpYbpgtmVuAeBCC9kYHlMx1nhQ&libraries=geometry"></script>
+    <script>
+        let autoRefreshInterval = null;
+        let autoRefreshEnabled = false;
+        let cameras = [];
+        let currentCamera = null;
+        let alertFilter = 'all';
+        let gmap = null;
+        let fiberPolyline = null;
+        let alarmMarkers = [];
+
+        // Alert type colors
+        const alertColors = {
+            critical: '#ef4444',
+            warning: '#f59e0b',
+            info: '#3b82f6',
+            resolved: '#22c55e'
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(initializeMap, 500);
+            loadInitialData();
+            loadCameras();
+            setInterval(updateConnectionStatus, 5000);
+            setInterval(updateMapAlerts, 3000);
+        });
+
+        // Initialize Google Map
+        function initializeMap() {
+            const mapElement = document.getElementById('gmap');
+            if (!mapElement) return;
+
+            const defaultCenter = { lat: 40.7128, lng: -74.0060 };
+
+            gmap = new google.maps.Map(mapElement, {
+                zoom: 12,
+                center: defaultCenter,
+                mapTypeId: google.maps.MapTypeId.ROADMAP
+            });
+
+            loadMapData();
+        }
+
+        // Load map data from MIFOS backend
+        async function loadMapData() {
+            try {
+                const response = await fetch('/api/map-data');
+                if (!response.ok) return;
+
+                const data = await response.json();
+
+                if (data.center && data.center.lat && data.center.lng) {
+                    gmap.setCenter(data.center);
+                    if (data.zoom) gmap.setZoom(data.zoom);
+                }
+
+                if (data.fiberRoute && data.fiberRoute.length > 0) {
+                    drawFiberRoute(data.fiberRoute);
+                }
+
+                if (data.alarmLocations && data.alarmLocations.length > 0) {
+                    drawAlarmMarkers(data.alarmLocations);
+                }
+            } catch (error) {
+                console.error('Error loading map data:', error);
+            }
+        }
+
+        // Draw fiber route as polyline
+        function drawFiberRoute(coordinates) {
+            if (fiberPolyline) fiberPolyline.setMap(null);
+
+            const path = coordinates.map(coord => ({
+                lat: parseFloat(coord.lat),
+                lng: parseFloat(coord.lng)
+            }));
+
+            fiberPolyline = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#0a7ea4',
+                strokeOpacity: 0.8,
+                strokeWeight: 3,
+                map: gmap
+            });
+        }
+
+        // Draw alarm markers on map
+        function drawAlarmMarkers(alarms) {
+            alarmMarkers.forEach(marker => marker.setMap(null));
+            alarmMarkers = [];
+
+            alarms.forEach(alarm => {
+                const color = getAlarmColor(alarm.type || 'warning');
+                const marker = new google.maps.Marker({
+                    position: { lat: parseFloat(alarm.lat), lng: parseFloat(alarm.lng) },
+                    map: gmap,
+                    title: `${alarm.type || 'Alert'}: ${alarm.distance || 'Unknown'} m`,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 8,
+                        fillColor: color,
+                        fillOpacity: 0.8,
+                        strokeColor: '#fff',
+                        strokeWeight: 2
+                    }
+                });
+
+                const infoWindow = new google.maps.InfoWindow({
+                    content: `<div style="padding: 10px; font-size: 12px;"><strong>${alarm.type || 'Alert'}</strong><br>Distance: ${(alarm.distance || 0).toFixed(2)} m<br>Time: ${new Date().toLocaleTimeString()}</div>`
+                });
+
+                marker.addListener('click', () => {
+                    infoWindow.open(gmap, marker);
+                });
+
+                alarmMarkers.push(marker);
+            });
+        }
+
+        // Get color for alarm type
+        function getAlarmColor(type) {
+            const colors = {
+                critical: '#ef4444',
+                warning: '#f59e0b',
+                info: '#3b82f6',
+                resolved: '#22c55e'
+            };
+            return colors[type] || '#0a7ea4';
+        }
+
+        // Update map alerts periodically
+        async function updateMapAlerts() {
+            if (!gmap) return;
+            try {
+                const response = await fetch('/api/map-alerts');
+                if (!response.ok) return;
+
+                const data = await response.json();
+                if (data.alarmLocations) {
+                    drawAlarmMarkers(data.alarmLocations);
+                }
+            } catch (error) {
+                console.error('Error updating map alerts:', error);
+            }
+        }
+
+        async function loadInitialData() {
+            await updateConnectionStatus();
+            await loadAcquisitionStatus();
+            await loadDisplaySettings();
+            await loadAlarms();
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        async function updateConnectionStatus() {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            
+            try {
+                const response = await fetch('/api/acquisition');
+                if (response.ok) {
+                    indicator.classList.add('connected');
+                    text.textContent = 'Connected';
+                } else {
+                    indicator.classList.remove('connected');
+                    text.textContent = 'Disconnected';
+                }
+            } catch (error) {
+                indicator.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        async function testConnection() {
+            const url = document.getElementById('serverUrl').value;
+            const messageEl = document.getElementById('connectionMessage');
+
+            try {
+                const response = await fetch('/api/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+
+                if (response.ok) {
+                    messageEl.textContent = '✓ Connected successfully!';
+                    messageEl.style.color = '#22c55e';
+                    await loadDisplaySettings();
+                } else {
+                    messageEl.textContent = '✗ Connection failed';
+                    messageEl.style.color = '#ef4444';
+                }
+            } catch (error) {
+                messageEl.textContent = `✗ Error: ${error.message}`;
+                messageEl.style.color = '#ef4444';
+            }
+        }
+
+        async function loadAcquisitionStatus() {
+            try {
+                const response = await fetch('/api/acquisition');
+                const data = await response.json();
+                const running = data.running;
+
+                const badge = document.getElementById('acquisitionBadge');
+                const btn = document.getElementById('toggleAcquisitionBtn');
+                const status = document.getElementById('acquisitionStatus');
+
+                if (running) {
+                    badge.textContent = 'Running';
+                    badge.className = 'status-badge running';
+                    btn.textContent = 'Stop';
+                    btn.className = 'btn-danger';
+                    status.innerHTML = 'Status: <strong>Running</strong>';
+                    startAutoRefresh();
+                } else {
+                    badge.textContent = 'Stopped';
+                    badge.className = 'status-badge stopped';
+                    btn.textContent = 'Start';
+                    btn.className = 'btn-success';
+                    status.innerHTML = 'Status: <strong>Stopped</strong>';
+                    stopAutoRefresh();
+                }
+            } catch (error) {
+                console.error('Error loading acquisition status:', error);
+            }
+        }
+
+        async function toggleAcquisition() {
+            try {
+                const badge = document.getElementById('acquisitionBadge');
+                const isRunning = badge.textContent === 'Running';
+
+                const response = await fetch('/api/acquisition', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ run: !isRunning })
+                });
+
+                if (response.ok) {
+                    await loadAcquisitionStatus();
+                }
+            } catch (error) {
+                console.error('Error toggling acquisition:', error);
+            }
+        }
+
+        async function refreshPlots() {
+            try {
+                const response = await fetch('/api/plots');
+                const data = await response.json();
+
+                const waterfallPlot = document.getElementById('waterfallPlot');
+                waterfallPlot.innerHTML = `<img src="${data.waterfall}" alt="Waterfall Diagram">`;
+
+                const singlePlot = document.getElementById('singlePlot');
+                singlePlot.innerHTML = `<img src="${data.single}" alt="Single Trace">`;
+
+                const now = new Date();
+                document.getElementById('lastUpdateTime').textContent = `Last updated: ${now.toLocaleTimeString()}`;
+            } catch (error) {
+                console.error('Error refreshing plots:', error);
+            }
+        }
+
+        function startAutoRefresh() {
+            if (autoRefreshInterval) return;
+            autoRefreshInterval = setInterval(refreshPlots, 2000);
+            document.getElementById('autoRefreshBtn').textContent = 'Disable';
+            autoRefreshEnabled = true;
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            document.getElementById('autoRefreshBtn').textContent = 'Enable';
+            autoRefreshEnabled = false;
+        }
+
+        function toggleAutoRefresh() {
+            if (autoRefreshEnabled) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        }
+
+        async function loadDisplaySettings() {
+            try {
+                const [roi, locations, magnitude, meter] = await Promise.all([
+                    fetch('/api/roi').then(r => r.json()),
+                    fetch('/api/locations').then(r => r.json()),
+                    fetch('/api/magnitude').then(r => r.json()),
+                    fetch('/api/meter').then(r => r.json())
+                ]);
+
+                document.getElementById('roiStart').value = roi.start || 0;
+                document.getElementById('roiEnd').value = roi.end || 1000;
+                document.getElementById('roiValue').textContent = `${roi.start}-${roi.end}`;
+
+                document.getElementById('locStart').value = locations.start || 0;
+                document.getElementById('locEnd').value = locations.end || 1000;
+                document.getElementById('locValue').textContent = `${locations.start}-${locations.end}`;
+
+                document.getElementById('magStart').value = magnitude.start || 0;
+                document.getElementById('magEnd').value = magnitude.end || 0.05;
+                document.getElementById('magValue').textContent = `${magnitude.start.toFixed(3)}-${magnitude.end.toFixed(3)}`;
+
+                const meterBtn = document.getElementById('meterToggleBtn');
+                if (meter.set) {
+                    meterBtn.textContent = 'Disable Meter';
+                    meterBtn.className = 'btn-danger';
+                    document.getElementById('meterValue').textContent = 'On';
+                } else {
+                    meterBtn.textContent = 'Enable Meter';
+                    meterBtn.className = 'btn-primary';
+                    document.getElementById('meterValue').textContent = 'Off';
+                }
+            } catch (error) {
+                console.error('Error loading display settings:', error);
+            }
+        }
+
+        async function updateRoi() {
+            const start = parseFloat(document.getElementById('roiStart').value);
+            const end = parseFloat(document.getElementById('roiEnd').value);
+
+            try {
+                await fetch('/api/roi', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start, end })
+                });
+                await loadDisplaySettings();
+            } catch (error) {
+                console.error('Error updating ROI:', error);
+            }
+        }
+
+        async function updateLocations() {
+            const start = parseFloat(document.getElementById('locStart').value);
+            const end = parseFloat(document.getElementById('locEnd').value);
+
+            try {
+                await fetch('/api/locations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start, end })
+                });
+                await loadDisplaySettings();
+            } catch (error) {
+                console.error('Error updating locations:', error);
+            }
+        }
+
+        async function updateMagnitude() {
+            const start = parseFloat(document.getElementById('magStart').value);
+            const end = parseFloat(document.getElementById('magEnd').value);
+
+            try {
+                await fetch('/api/magnitude', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ start, end })
+                });
+                await loadDisplaySettings();
+            } catch (error) {
+                console.error('Error updating magnitude:', error);
+            }
+        }
+
+        async function toggleMeter() {
+            const meterBtn = document.getElementById('meterToggleBtn');
+            const isEnabled = meterBtn.textContent === 'Disable Meter';
+
+            try {
+                await fetch(`/api/meter?set=${isEnabled ? 0 : 1}`);
+                await loadDisplaySettings();
+            } catch (error) {
+                console.error('Error toggling meter:', error);
+            }
+        }
+
+        // CCTV Functions
+        function addCamera() {
+            const name = document.getElementById('cameraName').value;
+            const url = document.getElementById('cameraUrl').value;
+
+            if (!name || !url) {
+                alert('Please enter both camera name and URL');
+                return;
+            }
+
+            cameras.push({ name, url });
+            localStorage.setItem('cameras', JSON.stringify(cameras));
+            document.getElementById('cameraName').value = '';
+            document.getElementById('cameraUrl').value = '';
+            loadCameras();
+        }
+
+        function loadCameras() {
+            const stored = localStorage.getItem('cameras');
+            cameras = stored ? JSON.parse(stored) : [];
+            updateCameraList();
+            updateCameraSelect();
+        }
+
+        function updateCameraList() {
+            const list = document.getElementById('camerasList');
+            if (cameras.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No cameras configured</p>';
+                return;
+            }
+
+            list.innerHTML = cameras.map((camera, index) => `
+                <div class="camera-item">
+                    <div class="camera-info">
+                        <div class="camera-name">${camera.name}</div>
+                        <div class="camera-url">${camera.url}</div>
+                    </div>
+                    <div class="camera-actions">
+                        <button class="btn-secondary" onclick="selectCamera(${index})">View</button>
+                        <button class="btn-danger" onclick="deleteCamera(${index})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateCameraSelect() {
+            const select = document.getElementById('cameraSelect');
+            select.innerHTML = '<option value="">Select Camera...</option>' + 
+                cameras.map((camera, index) => `<option value="${index}">${camera.name}</option>`).join('');
+        }
+
+        function selectCamera(index) {
+            currentCamera = index;
+            displayCamera(cameras[index]);
+        }
+
+        function switchCamera() {
+            const select = document.getElementById('cameraSelect');
+            if (select.value !== '') {
+                selectCamera(parseInt(select.value));
+            }
+        }
+
+        function displayCamera(camera) {
+            const container = document.querySelector('.camera-container');
+            // Try to display as image first, then as video
+            container.innerHTML = `<img src="${camera.url}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.url}</p></div>'">`;
+        }
+
+        function deleteCamera(index) {
+            if (confirm('Delete this camera?')) {
+                cameras.splice(index, 1);
+                localStorage.setItem('cameras', JSON.stringify(cameras));
+                loadCameras();
+            }
+        }
+
+        // Map Configuration
+        function saveMapConfig() {
+            const key = document.getElementById('googleMapsKey').value;
+            const lat = document.getElementById('mapLat').value;
+            const lng = document.getElementById('mapLng').value;
+
+            const config = { key, lat, lng };
+            localStorage.setItem('mapConfig', JSON.stringify(config));
+            alert('Map configuration saved!');
+        }
+
+
+
+        // Alarm Functions
+        async function loadAlarms() {
+            try {
+                const response = await fetch('/api/alarms');
+                const alarms = await response.json();
+                const list = document.getElementById('alarmsList');
+
+                if (alarms.length === 0) {
+                    list.innerHTML = '<li style="text-align: center; color: #999; padding: 20px;">No alarms configured</li>';
+                    return;
+                }
+
+                list.innerHTML = alarms.map((alarm, index) => `
+                    <li class="alarm-item ${!alarm.enable ? 'disabled' : ''}">
+                        <div class="alarm-info">
+                            <div class="alarm-threshold">Threshold: ${alarm.threshold.toFixed(4)}</div>
+                            <div class="alarm-status">${alarm.enable ? 'Enabled' : 'Disabled'}</div>
+                        </div>
+                        <div class="alarm-actions">
+                            <button class="btn-secondary" onclick="toggleAlarm(${index})">
+                                ${alarm.enable ? 'Disable' : 'Enable'}
+                            </button>
+                            <button class="btn-danger" onclick="deleteAlarm(${index})">Delete</button>
+                        </div>
+                    </li>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading alarms:', error);
+            }
+        }
+
+        async function addAlarm() {
+            const threshold = parseFloat(document.getElementById('newThreshold').value);
+
+            if (isNaN(threshold)) {
+                alert('Please enter a valid threshold value');
+                return;
+            }
+
+            try {
+                await fetch('/api/alarms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threshold })
+                });
+                document.getElementById('newThreshold').value = '';
+                await loadAlarms();
+            } catch (error) {
+                console.error('Error adding alarm:', error);
+            }
+        }
+
+        async function toggleAlarm(index) {
+            try {
+                await fetch(`/api/alarms/${index}/toggle`, { method: 'POST' });
+                await loadAlarms();
+            } catch (error) {
+                console.error('Error toggling alarm:', error);
+            }
+        }
+
+        async function deleteAlarm(index) {
+            if (!confirm('Are you sure you want to delete this alarm?')) return;
+
+            try {
+                await fetch(`/api/alarms/${index}`, { method: 'DELETE' });
+                await loadAlarms();
+            } catch (error) {
+                console.error('Error deleting alarm:', error);
+            }
+        }
+
+        async function resetAlarms() {
+            if (!confirm('Are you sure you want to reset all alarms?')) return;
+
+            try {
+                await fetch('/api/alarms/reset', { method: 'POST' });
+                await loadAlarms();
+            } catch (error) {
+                console.error('Error resetting alarms:', error);
+            }
+        }
+
+        async function loadAlarmEvents() {
+            try {
+                const response = await fetch('/api/alarm-events');
+                const events = await response.json();
+                const list = document.getElementById('recentAlertsList');
+
+                // Filter events based on alert type
+                let filteredEvents = events;
+                if (alertFilter !== 'all') {
+                    filteredEvents = events.filter(e => (e.type || 'warning') === alertFilter);
+                }
+
+                if (filteredEvents.length === 0) {
+                    list.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No alerts detected</p>';
+                    return;
+                }
+
+                list.innerHTML = filteredEvents.map(event => {
+                    const type = event.type || 'warning';
+                    const color = alertColors[type] || '#0a7ea4';
+                    return `
+                        <div class="alert-event-item" style="border-left-color: ${color};">
+                            <div class="alert-event-info">
+                                <div class="alert-event-type" style="color: ${color};">
+                                    ${type.charAt(0).toUpperCase() + type.slice(1)}
+                                </div>
+                                <div class="alert-event-location">
+                                    Location: ${(event.distance || event.location).toFixed(2)} m
+                                </div>
+                                <div class="alert-event-time">
+                                    ${new Date().toLocaleTimeString()}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('Error loading alarm events:', error);
+            }
+        }
+    </script>
+</body>
+</html>

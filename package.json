@@ -1,0 +1,24 @@
+{
+  "name": "mifos-web-dashboard",
+  "version": "1.0.0",
+  "description": "MIFOS Fiber Optic Sensor Dashboard - Desktop Web Application",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "fiber-optic",
+    "sensor",
+    "dashboard",
+    "real-time"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "axios": "^1.4.0"
+  }
+}

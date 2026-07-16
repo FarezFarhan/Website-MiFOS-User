@@ -50,6 +50,19 @@ app.get('/api/plots', async (req, res) => {
   }
 });
 
+// Raw live signal - single latest trace (used to build waterfall/trace client-side)
+app.get('/api/live-signal', async (req, res) => {
+  try {
+    if (!serverConfig.connected) {
+      return res.status(400).json({ error: 'Not connected to server' });
+    }
+    const response = await axios.get(`${serverConfig.baseUrl}/data/live_signal/latest`, { timeout: 5000 });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Toggle data acquisition
 app.post('/api/acquisition', async (req, res) => {
   try {

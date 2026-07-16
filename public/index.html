@@ -1142,6 +1142,14 @@
                 });
 
                 if (response.ok) {
+                    // Starting or stopping acquisition invalidates any buffered rows
+                    // (ROI/location may have changed, or the trace count restarts).
+                    waterfallBuffer = [];
+                    if (isRunning) {
+                        const resetHtml = '<div class="loading"><div class="spinner"></div><span>Start acquisition to view plots</span></div>';
+                        document.getElementById('waterfallPlot').innerHTML = resetHtml;
+                        document.getElementById('singlePlot').innerHTML = resetHtml;
+                    }
                     await loadAcquisitionStatus();
                 }
             } catch (error) {
@@ -1149,16 +1157,131 @@
             }
         }
 
+        // Rolling buffer of recent traces, used to build the waterfall image client-side.
+        // Each entry is one signal array (one row of the waterfall).
+        let waterfallBuffer = [];
+        const WATERFALL_MAX_ROWS = 80;
+
+        // Approximate 'jet' colormap: maps t in [0,1] to an [r,g,b] triple.
+        function jetColorRGB(t) {
+            t = Math.max(0, Math.min(1, t));
+            const r = Math.round(255 * Math.max(0, Math.min(Math.min(4 * t - 1.5, -4 * t + 4.5), 1)));
+            const g = Math.round(255 * Math.max(0, Math.min(Math.min(4 * t - 0.5, -4 * t + 3.5), 1)));
+            const b = Math.round(255 * Math.max(0, Math.min(Math.min(4 * t + 0.5, -4 * t + 2.5), 1)));
+            return [r, g, b];
+        }
+
+        function getMagRange() {
+            const magStart = parseFloat(document.getElementById('magStart')?.value);
+            const magEnd = parseFloat(document.getElementById('magEnd')?.value);
+            return {
+                start: Number.isFinite(magStart) ? magStart : 0,
+                end: Number.isFinite(magEnd) ? magEnd : 0.05
+            };
+        }
+
+        function ensureCanvas(containerId, canvasId) {
+            const container = document.getElementById(containerId);
+            let canvas = document.getElementById(canvasId);
+            if (!canvas) {
+                container.innerHTML = `<canvas id="${canvasId}" style="width:100%;height:100%;display:block;"></canvas>`;
+                canvas = document.getElementById(canvasId);
+            }
+            return canvas;
+        }
+
+        // Draws the waterfall: rows = time (oldest at top, newest at bottom), columns = fiber distance samples.
+        function drawWaterfall() {
+            if (waterfallBuffer.length === 0) return;
+
+            const canvas = ensureCanvas('waterfallPlot', 'waterfallCanvas');
+            const rows = waterfallBuffer.length;
+            const cols = waterfallBuffer[0].length;
+
+            // Internal resolution matches the data; CSS stretches it to fill the card.
+            canvas.width = cols;
+            canvas.height = rows;
+
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(cols, rows);
+            const { start: magStart, end: magEnd } = getMagRange();
+            const range = (magEnd - magStart) || 1;
+
+            for (let y = 0; y < rows; y++) {
+                const row = waterfallBuffer[y];
+                for (let x = 0; x < cols; x++) {
+                    const value = Math.abs(row[x] ?? 0);
+                    const t = (value - magStart) / range;
+                    const [r, g, b] = jetColorRGB(t);
+                    const idx = (y * cols + x) * 4;
+                    imageData.data[idx] = r;
+                    imageData.data[idx + 1] = g;
+                    imageData.data[idx + 2] = b;
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        // Draws the latest trace as a line chart: x = fiber distance sample index, y = intensity.
+        function drawTrace(signal) {
+            if (!signal || signal.length === 0) return;
+
+            const container = document.getElementById('singlePlot');
+            const canvas = ensureCanvas('singlePlot', 'traceCanvas');
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const { start: magStart, end: magEnd } = getMagRange();
+            const range = (magEnd - magStart) || 1;
+            const padding = 32;
+            const plotW = canvas.width - padding * 2;
+            const plotH = canvas.height - padding * 2;
+
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(padding, padding, plotW, plotH);
+
+            ctx.beginPath();
+            ctx.strokeStyle = '#0a7ea4';
+            ctx.lineWidth = 1.5;
+            signal.forEach((value, i) => {
+                const x = padding + (i / (signal.length - 1)) * plotW;
+                const norm = (Math.abs(value) - magStart) / range;
+                const y = padding + plotH - Math.max(0, Math.min(1, norm)) * plotH;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            ctx.fillStyle = '#888';
+            ctx.font = '11px sans-serif';
+            ctx.fillText(magEnd.toFixed(3), 4, padding + 4);
+            ctx.fillText(magStart.toFixed(3), 4, padding + plotH);
+            ctx.fillText('Fiber distance (samples) →', padding, canvas.height - 8);
+        }
+
         async function refreshPlots() {
             try {
-                const response = await fetch('/api/plots');
+                const response = await fetch('/api/live-signal');
+                if (!response.ok) throw new Error('Failed to fetch live signal');
                 const data = await response.json();
 
-                const waterfallPlot = document.getElementById('waterfallPlot');
-                waterfallPlot.innerHTML = `<img src="${data.waterfall}" alt="Waterfall Diagram">`;
+                if (!data.signal || data.signal.length === 0) {
+                    // DAQ buffer not populated yet (e.g. acquisition just started)
+                    return;
+                }
 
-                const singlePlot = document.getElementById('singlePlot');
-                singlePlot.innerHTML = `<img src="${data.single}" alt="Single Trace">`;
+                waterfallBuffer.push(data.signal);
+                if (waterfallBuffer.length > WATERFALL_MAX_ROWS) {
+                    waterfallBuffer.shift();
+                }
+
+                drawWaterfall();
+                drawTrace(data.signal);
 
                 const now = new Date();
                 document.getElementById('lastUpdateTime').textContent = `Last updated: ${now.toLocaleTimeString()}`;
@@ -1169,7 +1292,7 @@
 
         function startAutoRefresh() {
             if (autoRefreshInterval) return;
-            autoRefreshInterval = setInterval(refreshPlots, 2000);
+            autoRefreshInterval = setInterval(refreshPlots, 500);
             document.getElementById('autoRefreshBtn').textContent = 'Disable';
             autoRefreshEnabled = true;
         }

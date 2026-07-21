@@ -1292,7 +1292,7 @@
 
         function startAutoRefresh() {
             if (autoRefreshInterval) return;
-            autoRefreshInterval = setInterval(refreshPlots, 500);
+            autoRefreshInterval = setInterval(refreshPlots, 200);
             document.getElementById('autoRefreshBtn').textContent = 'Disable';
             autoRefreshEnabled = true;
         }

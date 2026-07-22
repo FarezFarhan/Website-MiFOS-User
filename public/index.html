@@ -1144,7 +1144,7 @@
                 if (response.ok) {
                     // Starting or stopping acquisition invalidates any buffered rows
                     // (ROI/location may have changed, or the trace count restarts).
-                    waterfallBuffer = [];
+                    resetWaterfall();
                     if (isRunning) {
                         const resetHtml = '<div class="loading"><div class="spinner"></div><span>Start acquisition to view plots</span></div>';
                         document.getElementById('waterfallPlot').innerHTML = resetHtml;
@@ -1157,10 +1157,24 @@
             }
         }
 
-        // Rolling buffer of recent traces, used to build the waterfall image client-side.
-        // Each entry is one signal array (one row of the waterfall).
+        // Rolling buffer of recent traces, used only to know how many rows we have
+        // buffered so far (for the initial "filling up" phase). Actual pixels live
+        // persistently on the canvas itself - see drawWaterfallRow() below.
         let waterfallBuffer = [];
         const WATERFALL_MAX_ROWS = 80;
+
+        // Persistent canvas state for the waterfall - kept across polls so we can
+        // shift its existing pixels instead of redrawing everything from scratch.
+        let waterfallCanvasEl = null;
+        let waterfallCtx = null;
+        let waterfallCols = 0;
+
+        function resetWaterfall() {
+            waterfallBuffer = [];
+            waterfallCanvasEl = null;
+            waterfallCtx = null;
+            waterfallCols = 0;
+        }
 
         // Approximate 'jet' colormap: maps t in [0,1] to an [r,g,b] triple.
         function jetColorRGB(t) {
@@ -1190,37 +1204,76 @@
             return canvas;
         }
 
-        // Draws the waterfall: rows = time (oldest at top, newest at bottom), columns = fiber distance samples.
-        function drawWaterfall() {
-            if (waterfallBuffer.length === 0) return;
+        // Sets up (or reuses) the waterfall canvas, wrapped in an overflow-hidden
+        // container so we can slide the canvas element itself for a smooth
+        // conveyor-belt animation instead of a hard redraw each poll.
+        function getWaterfallCanvas(cols) {
+            if (waterfallCanvasEl && waterfallCols === cols) {
+                return waterfallCanvasEl;
+            }
 
-            const canvas = ensureCanvas('waterfallPlot', 'waterfallCanvas');
-            const rows = waterfallBuffer.length;
-            const cols = waterfallBuffer[0].length;
+            const container = document.getElementById('waterfallPlot');
+            container.innerHTML = `
+                <div style="width:100%;height:100%;overflow:hidden;position:relative;">
+                    <canvas id="waterfallCanvas" style="width:100%;height:calc(100% + 2px);display:block;position:absolute;top:0;left:0;image-rendering:pixelated;"></canvas>
+                </div>`;
 
-            // Internal resolution matches the data; CSS stretches it to fill the card.
-            canvas.width = cols;
-            canvas.height = rows;
+            waterfallCanvasEl = document.getElementById('waterfallCanvas');
+            waterfallCanvasEl.width = cols;
+            waterfallCanvasEl.height = WATERFALL_MAX_ROWS;
+            waterfallCtx = waterfallCanvasEl.getContext('2d');
+            waterfallCols = cols;
 
-            const ctx = canvas.getContext('2d');
-            const imageData = ctx.createImageData(cols, rows);
+            return waterfallCanvasEl;
+        }
+
+        // Appends one new row to the waterfall by shifting all existing pixel rows
+        // up by one and drawing the new row at the bottom - so the oldest row is
+        // dropped off the top exactly as the newest row enters at the bottom.
+        // A short CSS transform animation makes that entry look like a smooth
+        // continuous scroll rather than an instant snap.
+        function drawWaterfallRow(signal) {
+            const cols = signal.length;
+            const canvas = getWaterfallCanvas(cols);
+            const ctx = waterfallCtx;
             const { start: magStart, end: magEnd } = getMagRange();
             const range = (magEnd - magStart) || 1;
 
-            for (let y = 0; y < rows; y++) {
-                const row = waterfallBuffer[y];
-                for (let x = 0; x < cols; x++) {
-                    const value = Math.abs(row[x] ?? 0);
-                    const t = (value - magStart) / range;
-                    const [r, g, b] = jetColorRGB(t);
-                    const idx = (y * cols + x) * 4;
-                    imageData.data[idx] = r;
-                    imageData.data[idx + 1] = g;
-                    imageData.data[idx + 2] = b;
-                    imageData.data[idx + 3] = 255;
-                }
+            // Shift existing image content up by exactly one pixel row.
+            ctx.drawImage(
+                canvas,
+                0, 1, cols, WATERFALL_MAX_ROWS - 1,
+                0, 0, cols, WATERFALL_MAX_ROWS - 1
+            );
+
+            // Paint the new row into the now-empty bottom-most pixel row.
+            const rowImageData = ctx.createImageData(cols, 1);
+            for (let x = 0; x < cols; x++) {
+                const value = Math.abs(signal[x] ?? 0);
+                const t = (value - magStart) / range;
+                const [r, g, b] = jetColorRGB(t);
+                const idx = x * 4;
+                rowImageData.data[idx] = r;
+                rowImageData.data[idx + 1] = g;
+                rowImageData.data[idx + 2] = b;
+                rowImageData.data[idx + 3] = 255;
             }
-            ctx.putImageData(imageData, 0, 0);
+            ctx.putImageData(rowImageData, 0, WATERFALL_MAX_ROWS - 1);
+
+            // Smooth slide-in: nudge the canvas down by one row's on-screen height,
+            // then animate it back to its resting position. Since the new row was
+            // just painted at the very bottom, this makes it look like it glides
+            // up into place rather than popping in instantly.
+            const parent = canvas.parentElement;
+            const rowHeightPx = parent.clientHeight / WATERFALL_MAX_ROWS;
+
+            canvas.style.transition = 'none';
+            canvas.style.transform = `translateY(${rowHeightPx}px)`;
+            // Force a reflow so the browser registers the starting position
+            // before we animate to the resting position below.
+            void canvas.offsetHeight;
+            canvas.style.transition = 'transform 200ms linear';
+            canvas.style.transform = 'translateY(0px)';
         }
 
         // Draws the latest trace as a line chart: x = fiber distance sample index, y = intensity.
@@ -1280,7 +1333,7 @@
                     waterfallBuffer.shift();
                 }
 
-                drawWaterfall();
+                drawWaterfallRow(data.signal);
                 drawTrace(data.signal);
 
                 const now = new Date();

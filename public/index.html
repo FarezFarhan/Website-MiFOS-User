@@ -714,8 +714,12 @@
                 <!-- Google Maps Section -->
                 <div class="card card-full">
                     <h2>🗺️ Fiber Route & Alert Map</h2>
+                    <div class="button-group" id="mapAreaButtons"></div>
                     <div class="map-container" id="mapContainer">
                         <div id="gmap"></div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn-secondary" onclick="resetMapView()">Reset Map</button>
                     </div>
                 </div>
             </div>
@@ -933,13 +937,32 @@
             loadMapData();
         }
 
-        // Load map data from MIFOS backend
-        async function loadMapData() {
+        // Tracks which area is currently shown and its route bounds, so
+        // Reset Map can re-fit the view without re-fetching from the server.
+        let currentMapArea = null;
+        let currentFiberBounds = null;
+        let mapButtonsBuilt = false;
+
+        // Load map data from MIFOS backend. Pass an area title (e.g. "MIMOS")
+        // to switch views; omit it to load the default (first) area.
+        async function loadMapData(area) {
             try {
-                const response = await fetch('/api/map-data');
+                const url = area ? `/api/map-data?area=${encodeURIComponent(area)}` : '/api/map-data';
+                const response = await fetch(url);
                 if (!response.ok) return;
 
                 const data = await response.json();
+                currentMapArea = data.title || area || null;
+
+                if (data.mapType && gmap) {
+                    const typeMap = {
+                        satellite: google.maps.MapTypeId.SATELLITE,
+                        terrain: google.maps.MapTypeId.TERRAIN,
+                        roadmap: google.maps.MapTypeId.ROADMAP,
+                        hybrid: google.maps.MapTypeId.HYBRID
+                    };
+                    gmap.setMapTypeId(typeMap[data.mapType] || google.maps.MapTypeId.ROADMAP);
+                }
 
                 if (data.center && data.center.lat && data.center.lng) {
                     gmap.setCenter(data.center);
@@ -948,17 +971,59 @@
 
                 if (data.fiberRoute && data.fiberRoute.length > 0) {
                     drawFiberRoute(data.fiberRoute);
+                } else if (fiberPolyline) {
+                    fiberPolyline.setMap(null);
+                    fiberPolyline = null;
+                    currentFiberBounds = null;
                 }
 
-                if (data.alarmLocations && data.alarmLocations.length > 0) {
+                if (data.alarmLocations) {
                     drawAlarmMarkers(data.alarmLocations);
                 }
+
+                if (data.availableAreas && !mapButtonsBuilt) {
+                    populateMapAreaButtons(data.availableAreas);
+                    mapButtonsBuilt = true;
+                }
+
+                highlightActiveAreaButton();
             } catch (error) {
                 console.error('Error loading map data:', error);
             }
         }
 
-        // Draw fiber route as polyline
+        // Builds one button per area returned by the backend (e.g. MIMOS,
+        // PUTRA HEIGHTS, SEGAMAT, MEMPAGA) - matches whatever mimos.json defines.
+        function populateMapAreaButtons(areas) {
+            const container = document.getElementById('mapAreaButtons');
+            container.innerHTML = areas.map(area =>
+                `<button class="btn-secondary" data-area="${area}" onclick="switchMapArea('${area}')">${area}</button>`
+            ).join('');
+        }
+
+        function highlightActiveAreaButton() {
+            document.querySelectorAll('#mapAreaButtons button').forEach(btn => {
+                const isActive = btn.dataset.area === currentMapArea;
+                btn.className = isActive ? 'btn-primary' : 'btn-secondary';
+            });
+        }
+
+        function switchMapArea(area) {
+            loadMapData(area);
+        }
+
+        // Re-fits the map to the current route's bounds without a network call.
+        // If nothing has loaded yet, falls back to a fresh load.
+        function resetMapView() {
+            if (currentFiberBounds) {
+                gmap.fitBounds(currentFiberBounds);
+            } else {
+                loadMapData(currentMapArea);
+            }
+        }
+
+        // Draw fiber route as a highlighted polyline (yellow, matching the
+        // reference MiFOS map view) and fit the map to its bounds.
         function drawFiberRoute(coordinates) {
             if (fiberPolyline) fiberPolyline.setMap(null);
 
@@ -970,11 +1035,15 @@
             fiberPolyline = new google.maps.Polyline({
                 path: path,
                 geodesic: true,
-                strokeColor: '#0a7ea4',
-                strokeOpacity: 0.8,
-                strokeWeight: 3,
+                strokeColor: '#FFD700',
+                strokeOpacity: 1,
+                strokeWeight: 4,
                 map: gmap
             });
+
+            currentFiberBounds = new google.maps.LatLngBounds();
+            path.forEach(point => currentFiberBounds.extend(point));
+            gmap.fitBounds(currentFiberBounds);
         }
 
         // Draw alarm markers on map

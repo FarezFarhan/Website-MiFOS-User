@@ -896,7 +896,7 @@
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCimeuGYBpYbpgtmVuAeBCC9kYHlMx1nhQ&libraries=geometry"></script>
     <script>
         let autoRefreshInterval = null;
-        let autoRefreshEnabled = false;
+        let autoRefreshEnabled = false; 
         let cameras = [];
         let currentCamera = null;
         let alertFilter = 'all';
@@ -1597,8 +1597,12 @@
 
         function displayCamera(camera) {
             const container = document.querySelector('.camera-container');
-            // Try to display as image first, then as video
-            container.innerHTML = `<img src="${camera.url}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.url}</p></div>'">`;
+            // Route through our own server (/api/camera-proxy), which handles the
+            // NVR's Digest auth handshake itself. Browsers strip user:password@
+            // credentials from <img> URLs, so the browser can never authenticate
+            // to the NVR directly - it only ever talks to our own server here.
+            const proxyUrl = `/api/camera-proxy?url=${encodeURIComponent(camera.url)}`;
+            container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.name}</p></div>'">`;
         }
 
         function deleteCamera(index) {
@@ -1687,10 +1691,15 @@
             if (!confirm('Are you sure you want to delete this alarm?')) return;
 
             try {
-                await fetch(`/api/alarms/${index}`, { method: 'DELETE' });
-                await loadAlarms();
+                const response = await fetch(`/api/alarms/${index}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errText = await response.text();
+                    alert(`Failed to delete alarm: ${errText}`);
+                    return
+                }
             } catch (error) {
                 console.error('Error deleting alarm:', error);
+                alert('Network error deleting alarm — check your connection.');
             }
         }
 

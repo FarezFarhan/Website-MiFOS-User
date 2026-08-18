@@ -30,7 +30,7 @@ let serverConfig = {
 app.post('/api/test-connection', async (req, res) => {
   try {
     const { url } = req.body;
-    const response = await axios.get(`${url}/data/view`, { timeout: 5000 });
+    const response = await axios.get(`${url}/data/view`, { timeout: 10000 });
     serverConfig.baseUrl = url;
     serverConfig.connected = true;
     res.json({ success: true, message: 'Connected successfully' });

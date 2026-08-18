@@ -914,6 +914,10 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
+            const savedServerUrl = localStorage.getItem('mifosServerUrl');
+            if (savedServerUrl) {
+                document.getElementById('serverUrl').value = savedServerUrl;
+            }
             setTimeout(initializeMap, 500);
             loadInitialData();
             loadCameras();
@@ -1094,7 +1098,8 @@
         async function updateMapAlerts() {
             if (!gmap) return;
             try {
-                const response = await fetch('/api/map-alerts');
+                const areaQuery = currentMapArea ? `?area=${encodeURIComponent(currentMapArea)}` : '';
+                const response = await fetch(`/api/map-alerts${areaQuery}`);
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -1145,7 +1150,7 @@
         }
 
         async function testConnection() {
-            const url = document.getElementById('serverUrl').value;
+            const url = document.getElementById('serverUrl').value.trim();
             const messageEl = document.getElementById('connectionMessage');
 
             try {
@@ -1154,13 +1159,15 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url })
                 });
+                const result = await response.json().catch(() => ({}));
 
                 if (response.ok) {
-                    messageEl.textContent = '✓ Connected successfully!';
+                    localStorage.setItem('mifosServerUrl', url);
+                    messageEl.textContent = `✓ ${result.message || 'Connected successfully!'}`;
                     messageEl.style.color = '#22c55e';
                     await loadDisplaySettings();
                 } else {
-                    messageEl.textContent = '✗ Connection failed';
+                    messageEl.textContent = `✗ Connection failed: ${result.error || response.statusText}`;
                     messageEl.style.color = '#ef4444';
                 }
             } catch (error) {

@@ -24,16 +24,63 @@ let serverConfig = {
   connected: false,
 };
 
+const DEFAULT_TIMEOUT_MS = 15000;
+const LIVE_SIGNAL_TIMEOUT_MS = 30000;
+
+function normalizeBaseUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '');
+}
+
+async function getMifos(url, endpoint, timeout = DEFAULT_TIMEOUT_MS) {
+  return axios.get(`${url}${endpoint}`, {
+    timeout,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  });
+}
+
+async function loadMapConfig(area) {
+  const configResponse = await getMifos(serverConfig.baseUrl, '/static/config/mimos.json');
+  const maps = configResponse.data.maps || [];
+  const selectedMap = area
+    ? maps.find(m => m.title === area) || maps[0]
+    : maps[0];
+
+  return { maps, selectedMap };
+}
+
+function buildAlarmLocations(alarmEvents, selectedMap) {
+  const center = selectedMap?.center || { latitude: 40.7128, longitude: -74.0060 };
+  const coordinates = selectedMap?.coordinates || [];
+
+  return alarmEvents.map(event => {
+    const distance = Number(event.distance || event.location || 0);
+    const point = interpolatePointAlongRoute(coordinates, distance);
+
+    return {
+      lat: event.lat || event.latitude || point?.lat || center.latitude,
+      lng: event.lng || event.longitude || point?.lng || center.longitude,
+      distance,
+      type: event.type || 'warning',
+      timestamp: event.timestamp || new Date().toISOString()
+    };
+  });
+}
+
 // API Routes
 
 // Test connection
 app.post('/api/test-connection', async (req, res) => {
   try {
-    const { url } = req.body;
-    const response = await axios.get(`${url}/data/view`, { timeout: 10000 });
+    const url = normalizeBaseUrl(req.body.url);
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'Server URL is required' });
+    }
+
+    const response = await getMifos(url, '/data/dm');
     serverConfig.baseUrl = url;
     serverConfig.connected = true;
-    res.json({ success: true, message: 'Connected successfully' });
+    res.json({ success: true, message: 'Connected successfully', status: response.status });
   } catch (error) {
     serverConfig.connected = false;
     res.status(400).json({ success: false, error: error.message });
@@ -59,7 +106,7 @@ app.get('/api/live-signal', async (req, res) => {
     if (!serverConfig.connected) {
       return res.status(400).json({ error: 'Not connected to server' });
     }
-    const response = await axios.get(`${serverConfig.baseUrl}/data/live_signal/latest`, { timeout: 5000 });
+    const response = await getMifos(serverConfig.baseUrl, '/data/live_signal/latest', LIVE_SIGNAL_TIMEOUT_MS);
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -242,21 +289,32 @@ app.get('/api/alarm-events', async (req, res) => {
 function interpolatePointAlongRoute(coordinates, targetDistance) {
   if (!coordinates || coordinates.length === 0) return null;
 
+  const distance = Number(targetDistance);
+  if (!Number.isFinite(distance)) return null;
+
   let accumulated = 0;
 
   for (let i = 0; i < coordinates.length - 1; i++) {
     const start = coordinates[i];
     const end = coordinates[i + 1];
+    const startLat = Number(start.latitude);
+    const startLng = Number(start.longitude);
+    const endLat = Number(end.latitude);
+    const endLng = Number(end.longitude);
 
     const segmentDistance = Number(end.distance || 0);
 
-    if (accumulated + segmentDistance >= targetDistance) {
-      const distanceIntoSegment = targetDistance - accumulated;
+    if (!Number.isFinite(startLat) || !Number.isFinite(startLng) || !Number.isFinite(endLat) || !Number.isFinite(endLng)) {
+      continue;
+    }
+
+    if (accumulated + segmentDistance >= distance) {
+      const distanceIntoSegment = distance - accumulated;
       const ratio = segmentDistance > 0 ? distanceIntoSegment / segmentDistance : 0;
 
       return {
-        lat: start.latitude + (end.latitude - start.latitude) * ratio,
-        lng: start.longitude + (end.longitude - start.longitude) * ratio,
+        lat: startLat + (endLat - startLat) * ratio,
+        lng: startLng + (endLng - startLng) * ratio,
       };
     }
 
@@ -265,8 +323,8 @@ function interpolatePointAlongRoute(coordinates, targetDistance) {
 
   const last = coordinates[coordinates.length - 1];
   return {
-    lat: last.latitude,
-    lng: last.longitude,
+    lat: Number(last.latitude),
+    lng: Number(last.longitude),
   };
 }
 
@@ -279,21 +337,15 @@ app.get('/api/map-data', async (req, res) => {
       return res.status(400).json({ error: 'Not connected to server' });
     }
 
-    const configResponse = await axios.get(`${serverConfig.baseUrl}/static/config/mimos.json`, { timeout: 5000 });
-    const maps = configResponse.data.maps || [];
+    const { maps, selectedMap } = await loadMapConfig(req.query.area);
 
     if (maps.length === 0) {
       return res.json({ center: { lat: 40.7128, lng: -74.0060 }, zoom: 12, fiberRoute: [], alarmLocations: [], availableAreas: [] });
     }
 
-    const requestedArea = req.query.area;
-    const selectedMap = requestedArea
-      ? maps.find(m => m.title === requestedArea) || maps[0]
-      : maps[0];
-
     let alarmEvents = [];
     try {
-      const alarmsResponse = await axios.get(`${serverConfig.baseUrl}/data/alarm/events`, { timeout: 5000 });
+      const alarmsResponse = await getMifos(serverConfig.baseUrl, '/data/alarm/events');
       alarmEvents = alarmsResponse.data || [];
     } catch (alarmError) {
       console.error('Error fetching alarm events:', alarmError.message);
@@ -310,20 +362,7 @@ app.get('/api/map-data', async (req, res) => {
         label: coord.label,
         distance: coord.distance
       })),
-      // Alarm distance-along-fiber isn't yet mapped to a lat/lng point on this route -
-      // that still needs interpolation using each point's cumulative "distance" field.
-      alarmLocations: alarmEvents.map(event => {
-        const distance = Number(event.distance || event.location || 0);
-        const point = interpolatePointAlongRoute(selectedMap.coordinates || [], distance);
-
-        return {
-          lat: event.lat || event.latitude || point?.lat || selectedMap.center.latitude,
-          lng: event.lng || event.longitude || point?.lng || selectedMap.center.longitude,
-          distance,
-          type: event.type || 'warning',
-          timestamp: event.timestamp || new Date().toISOString()
-        };
-      }),
+      alarmLocations: buildAlarmLocations(alarmEvents, selectedMap),
       availableAreas: maps.map(m => m.title)
     };
 
@@ -347,18 +386,12 @@ app.get('/api/map-alerts', async (req, res) => {
       return res.status(400).json({ error: 'Not connected to server' });
     }
 
-    const alarmsResponse = await axios.get(`${serverConfig.baseUrl}/data/alarm/events`);
+    const { selectedMap } = await loadMapConfig(req.query.area);
+    const alarmsResponse = await getMifos(serverConfig.baseUrl, '/data/alarm/events');
     const alarmEvents = alarmsResponse.data || [];
+    const alarmLocations = buildAlarmLocations(alarmEvents, selectedMap);
 
-    const alarmLocations = alarmEvents.map(event => ({
-      lat: event.lat || event.latitude || 40.7128,
-      lng: event.lng || event.longitude || -74.0060,
-      distance: event.distance || event.location || 0,
-      type: event.type || 'warning',
-      timestamp: event.timestamp || new Date().toISOString()
-    }));
-
-    res.json({ alarmLocations });
+    res.json({ alarmLocations, area: selectedMap?.title });
   } catch (error) {
     console.error('Error fetching map alerts:', error.message);
     res.json({ alarmLocations: [] });

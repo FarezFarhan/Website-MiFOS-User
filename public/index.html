@@ -773,7 +773,7 @@
                     <h2>🌐 Server Configuration</h2>
                     <div class="input-group">
                         <label>Server URL</label>
-                        <input type="text" id="serverUrl" placeholder="http://192.168.1.100:5000" value="http://localhost:5000">
+                        <input type="text" id="serverUrl" placeholder="http://192.168.1.100:5000" value="http://10.1.12.34:8080">
                     </div>
                     <div class="button-group">
                         <button class="btn-primary" onclick="testConnection()">Test Connection</button>
@@ -789,7 +789,7 @@
                     </div>
                     <div class="input-group">
                         <label>Camera IP Address / URL</label>
-                        <input type="url" id="cameraUrl" placeholder="e.g., http://192.168.1.50:8080/stream or rtsp://...">
+                        <input type="url" id="cameraUrl" placeholder="e.g., http://192.168.1.50:8080/stream or rtsp://..." value="">
                     </div>
                     <div class="button-group">
                         <button class="btn-success" onclick="addCamera()">Add Camera</button>
@@ -1261,6 +1261,16 @@
             return [r, g, b];
         }
 
+        function getLocationRange() {
+            const locStart = parseFloat(document.getElementById('locStart')?.value);
+            const locEnd = parseFloat(document.getElementById('locEnd')?.value);
+
+            return {
+                start: Number.isFinite(locStart) ? locStart : 0,
+                end: Number.isFinite(locEnd) ? locEnd : 1000
+            };
+        }
+
         function getMagRange() {
             const magStart = parseFloat(document.getElementById('magStart')?.value);
             const magEnd = parseFloat(document.getElementById('magEnd')?.value);
@@ -1309,52 +1319,122 @@
         // A short CSS transform animation makes that entry look like a smooth
         // continuous scroll rather than an instant snap.
         function drawWaterfallRow(signal) {
-            const cols = signal.length;
-            const canvas = getWaterfallCanvas(cols);
-            const ctx = waterfallCtx;
-            const { start: magStart, end: magEnd } = getMagRange();
-            const range = (magEnd - magStart) || 1;
+    if (!signal || signal.length === 0) return;
 
-            // Shift existing image content up by exactly one pixel row.
-            ctx.drawImage(
-                canvas,
-                0, 1, cols, WATERFALL_MAX_ROWS - 1,
-                0, 0, cols, WATERFALL_MAX_ROWS - 1
-            );
+    /*
+     * IMPORTANT:
+     * This assumes the signal array represents 0 -> 1000 metres.
+     *
+     * Example:
+     * signal.length = 2000
+     * Fibre length = 1000 m
+     *
+     * Therefore:
+     * 0 m    = sample 0
+     * 500 m  = sample 1000
+     * 1000 m = sample 1999
+     *
+     * Change TOTAL_FIBER_LENGTH to your actual fibre length.
+     */
+    const TOTAL_FIBER_LENGTH = 640;
 
-            // Paint the new row into the now-empty bottom-most pixel row.
-            const rowImageData = ctx.createImageData(cols, 1);
-            for (let x = 0; x < cols; x++) {
-                const value = Math.abs(signal[x] ?? 0);
-                const t = (value - magStart) / range;
-                const [r, g, b] = jetColorRGB(t);
-                const idx = x * 4;
-                rowImageData.data[idx] = r;
-                rowImageData.data[idx + 1] = g;
-                rowImageData.data[idx + 2] = b;
-                rowImageData.data[idx + 3] = 255;
-            }
-            ctx.putImageData(rowImageData, 0, WATERFALL_MAX_ROWS - 1);
+    const { start: locStart, end: locEnd } = getLocationRange();
 
-            // Smooth slide-in: nudge the canvas down by one row's on-screen height,
-            // then animate it back to its resting position. Since the new row was
-            // just painted at the very bottom, this makes it look like it glides
-            // up into place rather than popping in instantly.
-            const parent = canvas.parentElement;
-            const rowHeightPx = parent.clientHeight / WATERFALL_MAX_ROWS;
+    // Prevent invalid ranges
+    const safeStart = Math.max(0, Math.min(locStart, TOTAL_FIBER_LENGTH));
+    const safeEnd = Math.max(safeStart, Math.min(locEnd, TOTAL_FIBER_LENGTH));
 
-            canvas.style.transition = 'none';
-            canvas.style.transform = `translateY(${rowHeightPx}px)`;
-            // Force a reflow so the browser registers the starting position
-            // before we animate to the resting position below.
-            void canvas.offsetHeight;
-            canvas.style.transition = 'transform 200ms linear';
-            canvas.style.transform = 'translateY(0px)';
-        }
+    // Convert fibre distance (metres) to signal array indices
+    const startIndex = Math.floor(
+        (safeStart / TOTAL_FIBER_LENGTH) * signal.length
+    );
+
+    const endIndex = Math.ceil(
+        (safeEnd / TOTAL_FIBER_LENGTH) * signal.length
+    );
+
+    // Extract only the requested section of fibre
+    const selectedSignal = signal.slice(startIndex, endIndex);
+
+    if (selectedSignal.length === 0) return;
+
+    const cols = selectedSignal.length;
+
+    const canvas = getWaterfallCanvas(cols);
+    const ctx = waterfallCtx;
+
+    const { start: magStart, end: magEnd } = getMagRange();
+    const range = (magEnd - magStart) || 1;
+
+    // Shift existing image content up by one row
+    ctx.drawImage(
+        canvas,
+        0, 1, cols, WATERFALL_MAX_ROWS - 1,
+        0, 0, cols, WATERFALL_MAX_ROWS - 1
+    );
+
+    // Create new waterfall row
+    const rowImageData = ctx.createImageData(cols, 1);
+
+    for (let x = 0; x < cols; x++) {
+
+        const value = Math.abs(selectedSignal[x] ?? 0);
+
+        // Convert magnitude into 0-1 range
+        const t = (value - magStart) / range;
+
+        const [r, g, b] = jetColorRGB(t);
+
+        const idx = x * 4;
+
+        rowImageData.data[idx] = r;
+        rowImageData.data[idx + 1] = g;
+        rowImageData.data[idx + 2] = b;
+        rowImageData.data[idx + 3] = 255;
+    }
+
+    // Put the new row at bottom
+    ctx.putImageData(
+        rowImageData,
+        0,
+        WATERFALL_MAX_ROWS - 1
+    );
+
+    // Smooth waterfall movement
+    const parent = canvas.parentElement;
+    const rowHeightPx = parent.clientHeight / WATERFALL_MAX_ROWS;
+
+    canvas.style.transition = 'none';
+    canvas.style.transform = `translateY(${rowHeightPx}px)`;
+
+    void canvas.offsetHeight;
+
+    canvas.style.transition = 'transform 200ms linear';
+    canvas.style.transform = 'translateY(0px)';
+}
 
         // Draws the latest trace as a line chart: x = fiber distance sample index, y = intensity.
         function drawTrace(signal) {
             if (!signal || signal.length === 0) return;
+
+            const TOTAL_FIBER_LENGTH = 640;
+
+            const { start: locStart, end: locEnd } = getLocationRange();
+
+            const safeStart = Math.max(0, Math.min(locStart, TOTAL_FIBER_LENGTH));
+            const safeEnd = Math.max(safeStart, Math.min(locEnd, TOTAL_FIBER_LENGTH));
+
+            const startIndex = Math.floor(
+                (safeStart / TOTAL_FIBER_LENGTH) * signal.length
+            );
+
+            const endIndex = Math.ceil(
+                (safeEnd / TOTAL_FIBER_LENGTH) * signal.length
+            );
+
+            signal = signal.slice(startIndex, endIndex);
+
+            if (signal.length === 0) return;
 
             const container = document.getElementById('singlePlot');
             const canvas = ensureCanvas('singlePlot', 'traceCanvas');
@@ -1390,7 +1470,11 @@
             ctx.font = '11px sans-serif';
             ctx.fillText(magEnd.toFixed(3), 4, padding + 4);
             ctx.fillText(magStart.toFixed(3), 4, padding + plotH);
-            ctx.fillText('Fiber distance (samples) →', padding, canvas.height - 8);
+            ctx.fillText(
+               `Fiber distance (${locStart} m → ${locEnd} m)`,
+                padding,
+            canvas.height - 8
+            );
         }
 
         async function refreshPlots() {
@@ -1496,20 +1580,47 @@
         }
 
         async function updateLocations() {
-            const start = parseFloat(document.getElementById('locStart').value);
-            const end = parseFloat(document.getElementById('locEnd').value);
+    const start = parseFloat(document.getElementById('locStart').value);
+    const end = parseFloat(document.getElementById('locEnd').value);
 
-            try {
-                await fetch('/api/locations', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ start, end })
-                });
-                await loadDisplaySettings();
-            } catch (error) {
-                console.error('Error updating locations:', error);
-            }
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        alert('Please enter valid location values.');
+        return;
+    }
+
+    if (start >= end) {
+        alert('Location Start must be smaller than Location End.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/locations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ start, end })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to update location range');
         }
+
+        await loadDisplaySettings();
+
+        // Clear the old waterfall because the displayed
+        // fibre section has changed.
+        resetWaterfall();
+
+        // Clear waterfall container
+        document.getElementById('waterfallPlot').innerHTML = '';
+
+        // Get a fresh signal and immediately redraw
+        await refreshPlots();
+
+    } catch (error) {
+        console.error('Error updating locations:', error);
+    }
+}
+
 
         async function updateMagnitude() {
             const start = parseFloat(document.getElementById('magStart').value);

@@ -20,7 +20,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Store server configuration
 let serverConfig = {
-  baseUrl: 'http://localhost:5000',
+  baseUrl: 'http://10.1.12.34:8080',
   connected: false,
 };
 

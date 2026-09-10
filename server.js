@@ -5,6 +5,7 @@ import path from 'path';
 import http from 'http';
 import https from 'https';
 import crypto from 'crypto';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -286,6 +287,72 @@ app.get('/api/alarm-events', async (req, res) => {
   }
 });
 
+// --- CCTV camera list (server-side storage) ------------------------------
+//
+// Camera entries used to live only in the browser's localStorage, which
+// meant each device/browser had its own private list - a camera added on
+// one machine was invisible everywhere else. These endpoints persist the
+// list to a JSON file on this server instead, so every device loading the
+// dashboard reads and writes the same shared list.
+
+const CAMERAS_FILE = path.join(__dirname, 'cameras.json');
+
+async function loadCamerasFromDisk() {
+  try {
+    const data = await fs.readFile(CAMERAS_FILE, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function saveCamerasToDisk(cameras) {
+  await fs.writeFile(CAMERAS_FILE, JSON.stringify(cameras, null, 2));
+}
+
+app.get('/api/cameras', async (req, res) => {
+  try {
+    const cameras = await loadCamerasFromDisk();
+    res.json(cameras);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/cameras', async (req, res) => {
+  try {
+    const { name, url } = req.body;
+    if (!name || !url) {
+      return res.status(400).json({ error: 'Camera name and URL are required' });
+    }
+
+    const cameras = await loadCamerasFromDisk();
+    cameras.push({ name, url });
+    await saveCamerasToDisk(cameras);
+    res.json(cameras);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/cameras/:index', async (req, res) => {
+  try {
+    const index = parseInt(req.params.index, 10);
+    const cameras = await loadCamerasFromDisk();
+
+    if (!Number.isInteger(index) || index < 0 || index >= cameras.length) {
+      return res.status(404).json({ error: 'Camera not found' });
+    }
+
+    cameras.splice(index, 1);
+    await saveCamerasToDisk(cameras);
+    res.json(cameras);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 function interpolatePointAlongRoute(coordinates, targetDistance) {
   if (!coordinates || coordinates.length === 0) return null;
 
@@ -409,8 +476,8 @@ app.get('/api/map-alerts', async (req, res) => {
 // handshake with the NVR itself, then streams the resulting MJPEG feed
 // straight through to the browser.
 //
-// Camera URLs are stored (in the browser's localStorage, via addCamera())
-// in the form: http://username:password@nvr-ip/cgi-bin/mjpg/video.cgi?...
+// Camera URLs are stored (server-side, via /api/cameras) in the form:
+// http://username:password@nvr-ip/cgi-bin/mjpg/video.cgi?...
 // Node's URL parser reads the embedded username/password directly - it's
 // only browsers that refuse to send that part over the wire.
 
@@ -534,7 +601,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`MIFOS Dashboard server running on port ${PORT}`);
   console.log(`Open http://localhost:${PORT} in your browser`);
 });

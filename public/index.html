@@ -1635,7 +1635,14 @@
         }
 
         // CCTV Functions
-        function addCamera() {
+        //
+        // Camera entries are now stored server-side via /api/cameras (backed by
+        // cameras.json on the server), instead of the browser's localStorage.
+        // localStorage was per-browser/per-device, so a camera added on one
+        // machine never showed up on any other - moving this to the server
+        // means every device loading the dashboard sees the same shared list.
+
+        async function addCamera() {
             const name = document.getElementById('cameraName').value;
             const url = document.getElementById('cameraUrl').value;
 
@@ -1644,16 +1651,36 @@
                 return;
             }
 
-            cameras.push({ name, url });
-            localStorage.setItem('cameras', JSON.stringify(cameras));
-            document.getElementById('cameraName').value = '';
-            document.getElementById('cameraUrl').value = '';
-            loadCameras();
+            try {
+                const response = await fetch('/api/cameras', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, url })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    alert(`Failed to add camera: ${err.error || response.statusText}`);
+                    return;
+                }
+
+                document.getElementById('cameraName').value = '';
+                document.getElementById('cameraUrl').value = '';
+                await loadCameras();
+            } catch (error) {
+                console.error('Error adding camera:', error);
+                alert('Network error adding camera — check your connection.');
+            }
         }
 
-        function loadCameras() {
-            const stored = localStorage.getItem('cameras');
-            cameras = stored ? JSON.parse(stored) : [];
+        async function loadCameras() {
+            try {
+                const response = await fetch('/api/cameras');
+                cameras = response.ok ? await response.json() : [];
+            } catch (error) {
+                console.error('Error loading cameras:', error);
+                cameras = [];
+            }
             updateCameraList();
             updateCameraSelect();
         }
@@ -1707,11 +1734,20 @@
             container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.name}</p></div>'">`;
         }
 
-        function deleteCamera(index) {
-            if (confirm('Delete this camera?')) {
-                cameras.splice(index, 1);
-                localStorage.setItem('cameras', JSON.stringify(cameras));
-                loadCameras();
+        async function deleteCamera(index) {
+            if (!confirm('Delete this camera?')) return;
+
+            try {
+                const response = await fetch(`/api/cameras/${index}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    alert(`Failed to delete camera: ${err.error || response.statusText}`);
+                    return;
+                }
+                await loadCameras();
+            } catch (error) {
+                console.error('Error deleting camera:', error);
+                alert('Network error deleting camera — check your connection.');
             }
         }
 

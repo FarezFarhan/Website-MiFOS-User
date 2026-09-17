@@ -931,6 +931,12 @@
         let currentFiberBounds = null;
         let mapButtonsBuilt = false;
 
+        // Real fibre length (metres), read from the last point of the map's
+        // route data (which comes straight from the Linux/DAQ machine's
+        // mimos.json config) rather than a hardcoded guess. 640 is only a
+        // fallback used before the map data has loaded for the first time.
+        let fiberTotalLength = 640;
+
         // Load map data from MIFOS backend. Pass an area title (e.g. "MIMOS")
         // to switch views; omit it to load the default (first) area.
         async function loadMapData(area) {
@@ -959,6 +965,17 @@
 
                 if (data.fiberRoute && data.fiberRoute.length > 0) {
                     drawFiberRoute(data.fiberRoute);
+
+                    // The last point along the route carries the total
+                    // distance for this fibre run - use it as the real
+                    // fibre length instead of a hardcoded guess, so the
+                    // waterfall/trace distance math always matches whatever
+                    // is actually configured on the Linux/DAQ machine.
+                    const lastPoint = data.fiberRoute[data.fiberRoute.length - 1];
+                    const reportedLength = Number(lastPoint?.distance);
+                    if (Number.isFinite(reportedLength) && reportedLength > 0) {
+                        fiberTotalLength = reportedLength;
+                    }
                 } else if (fiberPolyline) {
                     fiberPolyline.setMap(null);
                     fiberPolyline = null;
@@ -1369,9 +1386,10 @@
      * 500 m  = sample 1000
      * 1000 m = sample 1999
      *
-     * Change TOTAL_FIBER_LENGTH to your actual fibre length.
+     * TOTAL_FIBER_LENGTH now comes from fiberTotalLength (populated in
+     * loadMapData() from the real route data), instead of a fixed guess.
      */
-    const TOTAL_FIBER_LENGTH = 640;
+    const TOTAL_FIBER_LENGTH = fiberTotalLength;
 
     const { start: locStart, end: locEnd } = getLocationRange();
 
@@ -1455,7 +1473,7 @@
         function drawTrace(signal) {
             if (!signal || signal.length === 0) return;
 
-            const TOTAL_FIBER_LENGTH = 640;
+            const TOTAL_FIBER_LENGTH = fiberTotalLength;
 
             const { start: locStart, end: locEnd } = getLocationRange();
 

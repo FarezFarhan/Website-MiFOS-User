@@ -1264,6 +1264,8 @@
             };
         }
 
+
+
         function ensureCanvas(containerId, canvasId) {
             const container = document.getElementById(containerId);
             let canvas = document.getElementById(canvasId);
@@ -1284,8 +1286,14 @@
 
             const container = document.getElementById('waterfallPlot');
             container.innerHTML = `
-                <div style="width:100%;height:100%;overflow:hidden;position:relative;">
-                    <canvas id="waterfallCanvas" style="width:100%;height:calc(100% + 2px);display:block;position:absolute;top:0;left:0;image-rendering:pixelated;"></canvas>
+                <div style="display:flex;width:100%;height:100%;font-family:sans-serif;">
+                    <div id="waterfallTimeAxis" style="width:44px;flex-shrink:0;position:relative;font-size:10px;color:#888;"></div>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+                        <div style="flex:1;overflow:hidden;position:relative;">
+                            <canvas id="waterfallCanvas" style="width:100%;height:calc(100% + 2px);display:block;position:absolute;top:0;left:0;image-rendering:pixelated;"></canvas>
+                        </div>
+                        <div id="waterfallDistAxis" style="height:18px;position:relative;font-size:10px;color:#888;margin-top:4px;"></div>
+                    </div>
                 </div>`;
 
             waterfallCanvasEl = document.getElementById('waterfallCanvas');
@@ -1296,6 +1304,40 @@
 
             return waterfallCanvasEl;
         }
+
+        function updateWaterfallAxes(locStart, locEnd) {
+    const timeAxis = document.getElementById('waterfallTimeAxis');
+    if (timeAxis) {
+        const totalSeconds = (WATERFALL_MAX_ROWS * ROW_INTERVAL_MS) / 1000;
+        const tickCount = 5;
+        let html = '';
+        for (let i = 0; i < tickCount; i++) {
+            const fraction = i / (tickCount - 1);
+            const secondsAgo = Math.round(fraction * totalSeconds);
+            const topPercent = fraction * 100;
+            const label = secondsAgo === 0 ? 'Now' : `-${secondsAgo}s`;
+            const translateY = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
+            html += `<div style="position:absolute;top:${topPercent}%;left:2px;transform:translateY(${translateY});white-space:nowrap;">${label}</div>`;
+        }
+        timeAxis.innerHTML = html;
+    }
+
+    const distAxis = document.getElementById('waterfallDistAxis');
+    if (distAxis) {
+        const tickCount = 5;
+        let html = '';
+        for (let i = 0; i < tickCount; i++) {
+            const fraction = i / (tickCount - 1);
+            const distance = locStart + fraction * (locEnd - locStart);
+            const leftPercent = fraction * 100;
+            const translateX = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
+            html += `<div style="position:absolute;left:${leftPercent}%;top:2px;transform:translateX(${translateX});white-space:nowrap;">${distance.toFixed(0)}m</div>`;
+        }
+        distAxis.innerHTML = html;
+    }
+}
+
+// Appends one new row to the waterfall...
 
         // Appends one new row to the waterfall by shifting all existing pixel rows
         // up by one and drawing the new row at the bottom - so the oldest row is

@@ -1353,8 +1353,8 @@
     // Shift existing image content up by one row
     ctx.drawImage(
         canvas,
-        0, 1, cols, WATERFALL_MAX_ROWS - 1,
-        0, 0, cols, WATERFALL_MAX_ROWS - 1
+        0, 0, cols, WATERFALL_MAX_ROWS - 1,
+        0, 1, cols, WATERFALL_MAX_ROWS - 1
     );
 
     // Create new waterfall row
@@ -1381,7 +1381,7 @@
     ctx.putImageData(
         rowImageData,
         0,
-        WATERFALL_MAX_ROWS - 1
+        0
     );
 
     // Smooth waterfall movement
@@ -1389,7 +1389,7 @@
     const rowHeightPx = parent.clientHeight / WATERFALL_MAX_ROWS;
 
     canvas.style.transition = 'none';
-    canvas.style.transform = `translateY(${rowHeightPx}px)`;
+    canvas.style.transform = `translateY(${-rowHeightPx}px)`;
 
     void canvas.offsetHeight;
 

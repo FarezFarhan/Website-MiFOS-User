@@ -1264,8 +1264,6 @@
             };
         }
 
-
-
         function ensureCanvas(containerId, canvasId) {
             const container = document.getElementById(containerId);
             let canvas = document.getElementById(canvasId);
@@ -1276,9 +1274,18 @@
             return canvas;
         }
 
+        // Rows enter at the top of the waterfall and "fall" downward as they
+        // age, dropping off the bottom - matches a physical waterfall.
+        // ROW_INTERVAL_MS must match the polling interval used in
+        // startAutoRefresh() below, since it's what the time axis labels are
+        // computed from.
+        const ROW_INTERVAL_MS = 200;
+
         // Sets up (or reuses) the waterfall canvas, wrapped in an overflow-hidden
         // container so we can slide the canvas element itself for a smooth
-        // conveyor-belt animation instead of a hard redraw each poll.
+        // conveyor-belt animation instead of a hard redraw each poll. Also
+        // builds the time axis (left, seconds ago) and distance axis (bottom,
+        // metres along the fibre) alongside it.
         function getWaterfallCanvas(cols) {
             if (waterfallCanvasEl && waterfallCols === cols) {
                 return waterfallCanvasEl;
@@ -1305,45 +1312,47 @@
             return waterfallCanvasEl;
         }
 
+        // Renders the time axis (left) and distance axis (bottom) around the
+        // waterfall canvas. locStart/locEnd are the currently displayed fibre
+        // section (not necessarily the whole fibre), so the distance axis
+        // always matches whatever section the user has zoomed into.
         function updateWaterfallAxes(locStart, locEnd) {
-    const timeAxis = document.getElementById('waterfallTimeAxis');
-    if (timeAxis) {
-        const totalSeconds = (WATERFALL_MAX_ROWS * ROW_INTERVAL_MS) / 1000;
-        const tickCount = 5;
-        let html = '';
-        for (let i = 0; i < tickCount; i++) {
-            const fraction = i / (tickCount - 1);
-            const secondsAgo = Math.round(fraction * totalSeconds);
-            const topPercent = fraction * 100;
-            const label = secondsAgo === 0 ? 'Now' : `-${secondsAgo}s`;
-            const translateY = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
-            html += `<div style="position:absolute;top:${topPercent}%;left:2px;transform:translateY(${translateY});white-space:nowrap;">${label}</div>`;
-        }
-        timeAxis.innerHTML = html;
-    }
+            const timeAxis = document.getElementById('waterfallTimeAxis');
+            if (timeAxis) {
+                const totalSeconds = (WATERFALL_MAX_ROWS * ROW_INTERVAL_MS) / 1000;
+                const tickCount = 5;
+                let html = '';
+                for (let i = 0; i < tickCount; i++) {
+                    const fraction = i / (tickCount - 1);
+                    const secondsAgo = Math.round(fraction * totalSeconds);
+                    const topPercent = fraction * 100;
+                    const label = secondsAgo === 0 ? 'Now' : `-${secondsAgo}s`;
+                    const translateY = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
+                    html += `<div style="position:absolute;top:${topPercent}%;left:2px;transform:translateY(${translateY});white-space:nowrap;">${label}</div>`;
+                }
+                timeAxis.innerHTML = html;
+            }
 
-    const distAxis = document.getElementById('waterfallDistAxis');
-    if (distAxis) {
-        const tickCount = 5;
-        let html = '';
-        for (let i = 0; i < tickCount; i++) {
-            const fraction = i / (tickCount - 1);
-            const distance = locStart + fraction * (locEnd - locStart);
-            const leftPercent = fraction * 100;
-            const translateX = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
-            html += `<div style="position:absolute;left:${leftPercent}%;top:2px;transform:translateX(${translateX});white-space:nowrap;">${distance.toFixed(0)}m</div>`;
+            const distAxis = document.getElementById('waterfallDistAxis');
+            if (distAxis) {
+                const tickCount = 5;
+                let html = '';
+                for (let i = 0; i < tickCount; i++) {
+                    const fraction = i / (tickCount - 1);
+                    const distance = locStart + fraction * (locEnd - locStart);
+                    const leftPercent = fraction * 100;
+                    const translateX = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
+                    html += `<div style="position:absolute;left:${leftPercent}%;top:2px;transform:translateX(${translateX});white-space:nowrap;">${distance.toFixed(0)}m</div>`;
+                }
+                distAxis.innerHTML = html;
+            }
         }
-        distAxis.innerHTML = html;
-    }
-}
-
-// Appends one new row to the waterfall...
 
         // Appends one new row to the waterfall by shifting all existing pixel rows
-        // up by one and drawing the new row at the bottom - so the oldest row is
-        // dropped off the top exactly as the newest row enters at the bottom.
-        // A short CSS transform animation makes that entry look like a smooth
-        // continuous scroll rather than an instant snap.
+        // down by one and drawing the new row at the top - so the newest row
+        // enters at the top and falls downward as it ages, oldest rows dropping
+        // off the bottom. A short CSS transform animation makes that entry look
+        // like a smooth continuous scroll rather than an instant snap.
         function drawWaterfallRow(signal) {
     if (!signal || signal.length === 0) return;
 
@@ -1389,10 +1398,13 @@
     const canvas = getWaterfallCanvas(cols);
     const ctx = waterfallCtx;
 
+    updateWaterfallAxes(safeStart, safeEnd);
+
     const { start: magStart, end: magEnd } = getMagRange();
     const range = (magEnd - magStart) || 1;
 
-    // Shift existing image content up by one row
+    // Shift existing image content down by one row, so the newest row
+    // enters at the top and rows fall downward as they age.
     ctx.drawImage(
         canvas,
         0, 0, cols, WATERFALL_MAX_ROWS - 1,
@@ -1419,7 +1431,7 @@
         rowImageData.data[idx + 3] = 255;
     }
 
-    // Put the new row at bottom
+    // Put the new row at top
     ctx.putImageData(
         rowImageData,
         0,

@@ -958,23 +958,24 @@
                     gmap.setMapTypeId(typeMap[data.mapType] || google.maps.MapTypeId.ROADMAP);
                 }
 
-                if (data.center && data.center.lat && data.center.lng) {
+                if (data.center && data.center.lat && data.center.lng && gmap) {
                     gmap.setCenter(data.center);
                     if (data.zoom) gmap.setZoom(data.zoom);
                 }
 
                 if (data.fiberRoute && data.fiberRoute.length > 0) {
-                    drawFiberRoute(data.fiberRoute);
-
-                    // The last point along the route carries the total
-                    // distance for this fibre run - use it as the real
-                    // fibre length instead of a hardcoded guess, so the
-                    // waterfall/trace distance math always matches whatever
-                    // is actually configured on the Linux/DAQ machine.
+                    // Extract the real fibre length first, before touching the
+                    // map itself - this way, even if gmap isn't ready yet or
+                    // drawing the route fails for some reason, fiberTotalLength
+                    // still gets updated correctly.
                     const lastPoint = data.fiberRoute[data.fiberRoute.length - 1];
                     const reportedLength = Number(lastPoint?.distance);
                     if (Number.isFinite(reportedLength) && reportedLength > 0) {
                         fiberTotalLength = reportedLength;
+                    }
+
+                    if (gmap) {
+                        drawFiberRoute(data.fiberRoute);
                     }
                 } else if (fiberPolyline) {
                     fiberPolyline.setMap(null);
@@ -1167,6 +1168,12 @@
                     messageEl.textContent = `✓ ${result.message || 'Connected successfully!'}`;
                     messageEl.style.color = '#22c55e';
                     await loadDisplaySettings();
+
+                    // The initial automatic map-data fetch on page load likely
+                    // failed (server wasn't connected yet at that point), which
+                    // is why fiberTotalLength can get stuck on its fallback
+                    // value. Re-fetch it now that we're actually connected.
+                    await loadMapData(currentMapArea);
                 } else {
                     messageEl.textContent = `✗ Connection failed: ${result.error || response.statusText}`;
                     messageEl.style.color = '#ef4444';
@@ -1375,7 +1382,7 @@
                     const distance = locStart + fraction * (locEnd - locStart);
                     const leftPercent = fraction * 100;
                     const translateX = i === 0 ? '0' : (i === tickCount - 1 ? '-100%' : '-50%');
-                    html += `<div style="position:absolute;left:${leftPercent}%;top:2px;transform:translateX(${translateX});white-space:nowrap;">${distance.toFixed(0)}m</div>`;
+                    html += `<div style="position:absolute;left:${leftPercent}%;top:2px;transform:translateX(${translateX});white-space:nowrap;">${distance.toFixed(0)}</div>`;
                 }
                 distAxis.innerHTML = html;
             }
@@ -1390,37 +1397,24 @@
     if (!signal || signal.length === 0) return;
 
     /*
-     * IMPORTANT:
-     * This assumes the signal array represents 0 -> 1000 metres.
-     *
-     * Example:
-     * signal.length = 2000
-     * Fibre length = 1000 m
-     *
-     * Therefore:
-     * 0 m    = sample 0
-     * 500 m  = sample 1000
-     * 1000 m = sample 1999
-     *
-     * TOTAL_FIBER_LENGTH now comes from fiberTotalLength (populated in
-     * loadMapData() from the real route data), instead of a fixed guess.
+     * locStart/locEnd come straight from the Location Range fields, which
+     * are themselves loaded directly from the Linux/DAQ machine's
+     * /data/locations endpoint. Rather than converting them through an
+     * assumed total fibre length (which requires guessing/fetching a
+     * separate config value), we treat them as literal sample-index
+     * positions and slice the signal directly - so whatever range the
+     * Linux machine reports is exactly what gets displayed, with no
+     * unit-conversion step that could drift out of sync.
      */
-    const TOTAL_FIBER_LENGTH = fiberTotalLength;
-
     const { start: locStart, end: locEnd } = getLocationRange();
 
-    // Prevent invalid ranges
-    const safeStart = Math.max(0, Math.min(locStart, TOTAL_FIBER_LENGTH));
-    const safeEnd = Math.max(safeStart, Math.min(locEnd, TOTAL_FIBER_LENGTH));
+    // Clamp only against the signal's own actual length, so the slice is
+    // always valid regardless of what locStart/locEnd contain.
+    const safeStart = Math.max(0, Math.min(Math.floor(locStart), signal.length));
+    const safeEnd = Math.max(safeStart, Math.min(Math.ceil(locEnd), signal.length));
 
-    // Convert fibre distance (metres) to signal array indices
-    const startIndex = Math.floor(
-        (safeStart / TOTAL_FIBER_LENGTH) * signal.length
-    );
-
-    const endIndex = Math.ceil(
-        (safeEnd / TOTAL_FIBER_LENGTH) * signal.length
-    );
+    const startIndex = safeStart;
+    const endIndex = safeEnd;
 
     // Extract only the requested section of fibre
     const selectedSignal = signal.slice(startIndex, endIndex);
@@ -1496,20 +1490,17 @@
         function drawTrace(signal) {
             if (!signal || signal.length === 0) return;
 
-            const TOTAL_FIBER_LENGTH = fiberTotalLength;
-
+            // Same approach as drawWaterfallRow() - locStart/locEnd are used
+            // directly as sample-index positions, matching exactly what the
+            // Linux/DAQ machine reports via /data/locations, with no
+            // metres-conversion step to drift out of sync.
             const { start: locStart, end: locEnd } = getLocationRange();
 
-            const safeStart = Math.max(0, Math.min(locStart, TOTAL_FIBER_LENGTH));
-            const safeEnd = Math.max(safeStart, Math.min(locEnd, TOTAL_FIBER_LENGTH));
+            const safeStart = Math.max(0, Math.min(Math.floor(locStart), signal.length));
+            const safeEnd = Math.max(safeStart, Math.min(Math.ceil(locEnd), signal.length));
 
-            const startIndex = Math.floor(
-                (safeStart / TOTAL_FIBER_LENGTH) * signal.length
-            );
-
-            const endIndex = Math.ceil(
-                (safeEnd / TOTAL_FIBER_LENGTH) * signal.length
-            );
+            const startIndex = safeStart;
+            const endIndex = safeEnd;
 
             signal = signal.slice(startIndex, endIndex);
 
@@ -1550,7 +1541,7 @@
             ctx.fillText(magEnd.toFixed(3), 4, padding + 4);
             ctx.fillText(magStart.toFixed(3), 4, padding + plotH);
             ctx.fillText(
-               `Fiber distance (${locStart} m → ${locEnd} m)`,
+               `Fiber location range (${locStart} → ${locEnd})`,
                 padding,
             canvas.height - 8
             );

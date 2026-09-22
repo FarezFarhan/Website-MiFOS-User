@@ -1,6 +1,18 @@
 [
   {
-    "name": "Camera test",
+    "name": "Camera 1",
+    "url": "http://admin:idfos2023@10.8.11.190/cgi-bin/mjpg/video.cgi?channel=1&subtype=1"
+  },
+  {
+    "name": "Camera 2",
+    "url": "http://admin:idfos2023@10.8.11.190/cgi-bin/mjpg/video.cgi?channel=2&subtype=1"
+  },
+  {
+    "name": "Camera 3",
+    "url": "http://admin:idfos2023@10.8.11.190/cgi-bin/mjpg/video.cgi?channel=3&subtype=1"
+  },
+  {
+    "name": "Camera 4",
     "url": "http://admin:idfos2023@10.8.11.190/cgi-bin/mjpg/video.cgi?channel=4&subtype=1"
   }
 ]

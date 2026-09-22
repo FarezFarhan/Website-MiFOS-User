@@ -40,9 +40,18 @@ async function getMifos(url, endpoint, timeout = DEFAULT_TIMEOUT_MS) {
   });
 }
 
+// Area titles hidden from the dashboard entirely - they exist in the Linux
+// machine's mimos.json config, but aren't actually wired up on that end
+// (only MIMOS and MEMPAGA are real right now), so we filter them out here
+// in one place rather than in every place the front-end touches map areas.
+// Matched case-insensitively against each map's "title" field.
+const DISABLED_MAP_AREAS = ['PUTRA HEIGHTS', 'SEGAMAT'];
+
 async function loadMapConfig(area) {
   const configResponse = await getMifos(serverConfig.baseUrl, '/static/config/mimos.json');
-  const maps = configResponse.data.maps || [];
+  const maps = (configResponse.data.maps || []).filter(
+    m => !DISABLED_MAP_AREAS.includes(String(m.title || '').toUpperCase())
+  );
   const selectedMap = area
     ? maps.find(m => m.title === area) || maps[0]
     : maps[0];

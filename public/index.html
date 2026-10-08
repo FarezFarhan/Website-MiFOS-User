@@ -409,7 +409,31 @@
             justify-content: center;
             overflow: hidden;
             margin-bottom: 15px;
+            position: relative;
         }
+
+        .camera-container:fullscreen {
+            height: 100%;
+            border-radius: 0;
+        }
+
+        .camera-fullscreen-btn{
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 8px 14px;
+            font-size: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .camera-fullscreen-btn:hover {
+            background: rgba(0, 0, 0, 0.8);
+      }
 
         .camera-container img,
         .camera-container video {
@@ -596,6 +620,10 @@
             .camera-list {
                 grid-template-columns: 1fr;
             }
+
+            .camera-container {
+                height: 320px;
+      }
 
             .legend-items {
                 grid-template-columns: repeat(2, 1fr);
@@ -1817,8 +1845,20 @@
             // credentials from <img> URLs, so the browser can never authenticate
             // to the NVR directly - it only ever talks to our own server here.
             const proxyUrl = `/api/camera-proxy?url=${encodeURIComponent(camera.url)}`;
-            container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.name}</p></div>'">`;
+            container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="...">` +
+        `<button class="camera-fullscreen-btn" onclick="toggleCameraFullscreen()">⛶ Fullscreen</button>`;
         }
+
+        function toggleCameraFullscreen() {
+            const container = document.querySelector('.camera-container');
+            if (!document.fullscreenElement) {
+            container.requestFullscreen?.().catch(err => {
+                    console.error('Error entering fullscreen:', err);
+                });
+            } else {
+                document.exitFullscreen?.();
+            }
+       }
 
         async function deleteCamera(index) {
             if (!confirm('Delete this camera?')) return;

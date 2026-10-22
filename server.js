@@ -331,13 +331,13 @@ app.get('/api/cameras', async (req, res) => {
 
 app.post('/api/cameras', async (req, res) => {
   try {
-    const { name, url } = req.body;
+    const { name, url, ptz } = req.body;
     if (!name || !url) {
       return res.status(400).json({ error: 'Camera name and URL are required' });
     }
 
     const cameras = await loadCamerasFromDisk();
-    cameras.push({ name, url });
+    cameras.push({ name, url, ptz: Boolean(ptz) });
     await saveCamerasToDisk(cameras);
     res.json(cameras);
   } catch (error) {
@@ -602,6 +602,92 @@ app.get('/api/camera-proxy', async (req, res) => {
     if (!res.headersSent) {
       res.status(502).json({ error: `Unable to reach camera: ${error.message}` });
     }
+  }
+});
+
+// --- CCTV PTZ control -----------------------------------------------------
+//
+// Sends Pan/Tilt/Zoom commands to a Dahua PTZ camera's ptz.cgi endpoint,
+// using the same Digest auth handshake as the stream proxy above - just a
+// single authenticated GET instead of a piped stream, since ptz.cgi returns
+// a short status response rather than video.
+
+const PTZ_CODES = new Set([
+  'Up', 'Down', 'Left', 'Right',
+  'LeftUp', 'RightUp', 'LeftDown', 'RightDown',
+  'ZoomTele', 'ZoomWide'
+]);
+
+async function digestAuthGet(targetUrlStr) {
+  const targetUrl = new URL(targetUrlStr);
+  const username = decodeURIComponent(targetUrl.username);
+  const password = decodeURIComponent(targetUrl.password);
+  const uri = targetUrl.pathname + targetUrl.search;
+  const isHttps = targetUrl.protocol === 'https:';
+  const httpModule = isHttps ? https : http;
+  const port = targetUrl.port || (isHttps ? 443 : 80);
+
+  // Same single-connection requirement as proxyDigestStream() - this NVR
+  // ties a Digest nonce to the specific TCP connection it was issued on.
+  const agent = new httpModule.Agent({ keepAlive: true, maxSockets: 1 });
+  const baseOptions = { hostname: targetUrl.hostname, port, path: uri, method: 'GET', agent };
+
+  const challenge = await new Promise((resolve, reject) => {
+    const probeReq = httpModule.request(baseOptions, (probeRes) => {
+      probeRes.resume();
+      if (probeRes.statusCode !== 401 || !probeRes.headers['www-authenticate']) {
+        reject(new Error(`Camera did not return a digest auth challenge (status ${probeRes.statusCode})`));
+        return;
+      }
+      resolve(parseDigestChallenge(probeRes.headers['www-authenticate']));
+    });
+    probeReq.on('error', reject);
+    probeReq.end();
+  });
+
+  const authValue = buildDigestAuthHeader({ username, password, method: 'GET', uri, challenge });
+
+  return new Promise((resolve, reject) => {
+    const authReq = httpModule.request(
+      { ...baseOptions, headers: { Authorization: authValue } },
+      (authRes) => {
+        let body = '';
+        authRes.on('data', (chunk) => { body += chunk; });
+        authRes.on('end', () => resolve({ statusCode: authRes.statusCode, body }));
+        authRes.on('error', reject);
+      }
+    );
+    authReq.on('error', reject);
+    authReq.end();
+  });
+}
+
+app.post('/api/camera-ptz', async (req, res) => {
+  try {
+    const { url, action, code, speed } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ error: 'Missing camera url' });
+    }
+    if (action !== 'start' && action !== 'stop') {
+      return res.status(400).json({ error: 'action must be "start" or "stop"' });
+    }
+    if (!PTZ_CODES.has(code)) {
+      return res.status(400).json({ error: `Unsupported PTZ code: ${code}` });
+    }
+
+    const ptzSpeed = Math.min(8, Math.max(1, Number(speed) || 5));
+
+    const cameraUrl = new URL(url);
+    const channel = cameraUrl.searchParams.get('channel') || '1';
+    const ptzUrl = `${cameraUrl.protocol}//${cameraUrl.username}:${cameraUrl.password}@${cameraUrl.host}` +
+      `/cgi-bin/ptz.cgi?action=${action}&channel=${channel}&code=${code}&arg1=0&arg2=${ptzSpeed}&arg3=0`;
+
+    const result = await digestAuthGet(ptzUrl);
+    res.json({ success: result.statusCode === 200, statusCode: result.statusCode });
+  } catch (error) {
+    console.error('PTZ control error:', error.message);
+    res.status(502).json({ error: `Unable to reach camera: ${error.message}` });
   }
 });
 

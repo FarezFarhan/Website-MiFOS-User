@@ -401,7 +401,7 @@
         /* CCTV Styles */
         .camera-container {
             width: 100%;
-            height: 300px;
+            height: 600px;
             background: #000;
             border-radius: 8px;
             display: flex;
@@ -417,7 +417,7 @@
             border-radius: 0;
         }
 
-        .camera-fullscreen-btn{
+        .camera-fullscreen-btn {
             position: absolute;
             bottom: 10px;
             right: 10px;
@@ -433,7 +433,72 @@
 
         .camera-fullscreen-btn:hover {
             background: rgba(0, 0, 0, 0.8);
-      }
+        }
+
+        /* PTZ control pad */
+        .ptz-controls {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .ptz-dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 44px);
+            grid-template-rows: repeat(3, 44px);
+            gap: 4px;
+        }
+
+        .ptz-btn {
+            border: none;
+            border-radius: 6px;
+            background: #0a7ea4;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            user-select: none;
+            touch-action: none;
+        }
+
+        .ptz-dpad .ptz-btn {
+            width: 44px;
+            height: 44px;
+        }
+
+        .ptz-btn:hover {
+            background: #086a8a;
+        }
+
+        .ptz-btn:active {
+            background: #065269;
+        }
+
+        .ptz-center {
+            background: #ddd;
+            cursor: default;
+        }
+
+        .ptz-center:hover {
+            background: #ddd;
+        }
+
+        .ptz-zoom {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .ptz-zoom-btn {
+            width: 90px;
+            height: 38px;
+            font-size: 13px;
+        }
 
         .camera-container img,
         .camera-container video {
@@ -623,7 +688,7 @@
 
             .camera-container {
                 height: 320px;
-      }
+            }
 
             .legend-items {
                 grid-template-columns: repeat(2, 1fr);
@@ -731,6 +796,23 @@
                                 <p style="font-size: 12px; margin-top: 10px;">Configure cameras in Settings tab</p>
                             </div>
                         </div>
+                        <div id="ptzControls" class="ptz-controls" style="display:none;">
+                            <div class="ptz-dpad">
+                                <button class="ptz-btn" data-code="LeftUp" title="Up-Left">↖</button>
+                                <button class="ptz-btn" data-code="Up" title="Up">↑</button>
+                                <button class="ptz-btn" data-code="RightUp" title="Up-Right">↗</button>
+                                <button class="ptz-btn" data-code="Left" title="Left">←</button>
+                                <button class="ptz-btn ptz-center" disabled>⏺</button>
+                                <button class="ptz-btn" data-code="Right" title="Right">→</button>
+                                <button class="ptz-btn" data-code="LeftDown" title="Down-Left">↙</button>
+                                <button class="ptz-btn" data-code="Down" title="Down">↓</button>
+                                <button class="ptz-btn" data-code="RightDown" title="Down-Right">↘</button>
+                            </div>
+                            <div class="ptz-zoom">
+                                <button class="ptz-btn ptz-zoom-btn" data-code="ZoomTele" title="Zoom In">Zoom +</button>
+                                <button class="ptz-btn ptz-zoom-btn" data-code="ZoomWide" title="Zoom Out">Zoom −</button>
+                            </div>
+                        </div>
                         <div class="button-group">
                             <select id="cameraSelect" onchange="switchCamera()" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
                                 <option value="">Select Camera...</option>
@@ -802,6 +884,12 @@
                     <div class="input-group">
                         <label>Camera IP Address / URL</label>
                         <input type="url" id="cameraUrl" placeholder="e.g., http://192.168.1.50:8080/stream or rtsp://..." value="">
+                    </div>
+                    <div class="input-group">
+                        <label style="display:flex;align-items:center;gap:8px;font-weight:500;cursor:pointer;">
+                            <input type="checkbox" id="cameraPtz" style="width:auto;">
+                            This is a PTZ camera (enables pan/tilt/zoom controls)
+                        </label>
                     </div>
                     <div class="button-group">
                         <button class="btn-success" onclick="addCamera()">Add Camera</button>
@@ -907,7 +995,8 @@
 
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCimeuGYBpYbpgtmVuAeBCC9kYHlMx1nhQ&libraries=geometry"></script>
     <script>
-        let autoRefreshInterval = null;
+        let autoRefreshTimeoutId = null;
+        const REFRESH_DELAY_MS = 200;
         let autoRefreshEnabled = false; 
         let cameras = [];
         let currentCamera = null;
@@ -933,6 +1022,7 @@
             setTimeout(initializeMap, 500);
             loadInitialData();
             loadCameras();
+            setupPtzButtons();
             setInterval(updateConnectionStatus, 5000);
             setInterval(updateMapAlerts, 3000);
         });
@@ -1602,19 +1692,32 @@
         }
 
         function startAutoRefresh() {
-            if (autoRefreshInterval) return;
-            autoRefreshInterval = setInterval(refreshPlots, 200);
-            document.getElementById('autoRefreshBtn').textContent = 'Disable';
+            if (autoRefreshEnabled) return;
             autoRefreshEnabled = true;
+            document.getElementById('autoRefreshBtn').textContent = 'Disable';
+
+            // Self-scheduling loop: only queues the NEXT fetch once the
+            // current one has fully finished (success or failure). This
+            // replaces setInterval, which fired on a fixed clock regardless
+            // of whether the previous fetch had completed - causing
+            // overlapping requests to stack up and resolve out of order
+            // whenever the Linux/DAQ backend responded slower than 200ms,
+            // which is what produced the inconsistent row speed.
+            (async function loop() {
+                if (!autoRefreshEnabled) return;
+                await refreshPlots();
+                if (!autoRefreshEnabled) return;
+                autoRefreshTimeoutId = setTimeout(loop, REFRESH_DELAY_MS);
+            })();
         }
 
         function stopAutoRefresh() {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-                autoRefreshInterval = null;
+            autoRefreshEnabled = false;
+            if (autoRefreshTimeoutId) {
+                clearTimeout(autoRefreshTimeoutId);
+                autoRefreshTimeoutId = null;
             }
             document.getElementById('autoRefreshBtn').textContent = 'Enable';
-            autoRefreshEnabled = false;
         }
 
         function toggleAutoRefresh() {
@@ -1759,6 +1862,7 @@
         async function addCamera() {
             const name = document.getElementById('cameraName').value;
             const url = document.getElementById('cameraUrl').value;
+            const ptz = document.getElementById('cameraPtz').checked;
 
             if (!name || !url) {
                 alert('Please enter both camera name and URL');
@@ -1769,7 +1873,7 @@
                 const response = await fetch('/api/cameras', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, url })
+                    body: JSON.stringify({ name, url, ptz })
                 });
 
                 if (!response.ok) {
@@ -1780,6 +1884,7 @@
 
                 document.getElementById('cameraName').value = '';
                 document.getElementById('cameraUrl').value = '';
+                document.getElementById('cameraPtz').checked = false;
                 await loadCameras();
             } catch (error) {
                 console.error('Error adding camera:', error);
@@ -1809,7 +1914,7 @@
             list.innerHTML = cameras.map((camera, index) => `
                 <div class="camera-item">
                     <div class="camera-info">
-                        <div class="camera-name">${camera.name}</div>
+                        <div class="camera-name">${camera.name}${camera.ptz ? ' <span style="font-size:11px;color:#0a7ea4;font-weight:600;">(PTZ)</span>' : ''}</div>
                         <div class="camera-url">${camera.url}</div>
                     </div>
                     <div class="camera-actions">
@@ -1845,20 +1950,77 @@
             // credentials from <img> URLs, so the browser can never authenticate
             // to the NVR directly - it only ever talks to our own server here.
             const proxyUrl = `/api/camera-proxy?url=${encodeURIComponent(camera.url)}`;
-            container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="...">` +
-        `<button class="camera-fullscreen-btn" onclick="toggleCameraFullscreen()">⛶ Fullscreen</button>`;
+            container.innerHTML = `<img src="${proxyUrl}" alt="${camera.name}" onerror="this.parentElement.innerHTML='<div class=camera-placeholder><p>Unable to load camera stream</p><p style=font-size:12px;margin-top:10px;>${camera.name}</p></div>'">` +
+                `<button class="camera-fullscreen-btn" onclick="toggleCameraFullscreen()">⛶ Fullscreen</button>`;
+
+            updatePtzControlsVisibility(camera);
         }
 
+        // Shows the PTZ directional pad only when the currently displayed
+        // camera was marked as a PTZ camera when it was added.
+        function updatePtzControlsVisibility(camera) {
+            const ptzPanel = document.getElementById('ptzControls');
+            if (!ptzPanel) return;
+            ptzPanel.style.display = camera && camera.ptz ? 'flex' : 'none';
+        }
+
+        // Sends a Pan/Tilt/Zoom command for the currently selected camera.
+        // action is 'start' or 'stop'; code is one of the Dahua PTZ codes
+        // (Up, Down, Left, Right, the four diagonals, ZoomTele, ZoomWide).
+        async function sendPtzCommand(action, code) {
+            const camera = currentCamera !== null ? cameras[currentCamera] : null;
+            if (!camera || !camera.ptz) return;
+
+            try {
+                await fetch('/api/camera-ptz', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: camera.url, action, code })
+                });
+            } catch (error) {
+                console.error('Error sending PTZ command:', error);
+            }
+        }
+
+        // Wires up press-and-hold behaviour on every PTZ button: movement
+        // starts on press and stops on release (or if the pointer leaves the
+        // button/touch is cancelled), matching how physical PTZ joysticks
+        // work - holding the button moves the camera, letting go stops it.
+        function setupPtzButtons() {
+            document.querySelectorAll('.ptz-btn[data-code]').forEach(btn => {
+                const code = btn.dataset.code;
+
+                const start = (e) => {
+                    e.preventDefault();
+                    sendPtzCommand('start', code);
+                };
+                const stop = (e) => {
+                    e.preventDefault();
+                    sendPtzCommand('stop', code);
+                };
+
+                btn.addEventListener('mousedown', start);
+                btn.addEventListener('touchstart', start);
+                btn.addEventListener('mouseup', stop);
+                btn.addEventListener('mouseleave', stop);
+                btn.addEventListener('touchend', stop);
+                btn.addEventListener('touchcancel', stop);
+            });
+        }
+
+        // Toggles fullscreen on the camera display container itself, not the
+        // whole page, so the feed fills the screen without the rest of the
+        // dashboard chrome around it.
         function toggleCameraFullscreen() {
             const container = document.querySelector('.camera-container');
             if (!document.fullscreenElement) {
-            container.requestFullscreen?.().catch(err => {
+                container.requestFullscreen?.().catch(err => {
                     console.error('Error entering fullscreen:', err);
                 });
             } else {
                 document.exitFullscreen?.();
             }
-       }
+        }
 
         async function deleteCamera(index) {
             if (!confirm('Delete this camera?')) return;
